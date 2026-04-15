@@ -9,6 +9,35 @@ const APP_PREFS_KEY = '@app_prefs';
 const ANALYZE_CACHE_KEY = '@analyze_cache';
 const HELP_REQUESTS_KEY = '@help_requests_local';
 const COMMUNITY_OPT_IN_KEY = '@community_opt_in';
+const AUTH_TOKEN_KEY = '@auth_token';
+const AUTH_USER_KEY = '@auth_user';
+
+// ── Auth (JWT for the website history feature) ─────────────────────
+export const getAuthToken = async () => {
+  try { return await AsyncStorage.getItem(AUTH_TOKEN_KEY); } catch { return null; }
+};
+export const setAuthToken = async (token) => {
+  try {
+    if (token) await AsyncStorage.setItem(AUTH_TOKEN_KEY, token);
+    else await AsyncStorage.removeItem(AUTH_TOKEN_KEY);
+  } catch (e) { console.error('Failed to save auth token', e); }
+};
+export const getAuthUser = async () => {
+  try {
+    const v = await AsyncStorage.getItem(AUTH_USER_KEY);
+    return v ? JSON.parse(v) : null;
+  } catch { return null; }
+};
+export const setAuthUser = async (user) => {
+  try {
+    if (user) await AsyncStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
+    else await AsyncStorage.removeItem(AUTH_USER_KEY);
+  } catch (e) { console.error('Failed to save auth user', e); }
+};
+export const clearAuth = async () => {
+  await setAuthToken(null);
+  await setAuthUser(null);
+};
 
 const generateId = () => Date.now().toString() + Math.floor(Math.random() * 1000);
 

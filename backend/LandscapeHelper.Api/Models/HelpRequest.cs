@@ -1,4 +1,4 @@
-namespace DIYHelper2.Api.Models;
+namespace LandscapeHelper.Api.Models;
 
 public class HelpRequest
 {

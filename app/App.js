@@ -17,6 +17,8 @@ import Inventory from './src/screens/Inventory';
 import ShoppingList from './src/screens/ShoppingList';
 import Emergency from './src/screens/Emergency';
 import Diagnose from './src/screens/Diagnose';
+import WholeHouse from './src/screens/WholeHouseScreen';
+import WholeHouseResult from './src/screens/WholeHouseResultScreen';
 import Quotes from './src/screens/Quotes';
 import Community from './src/screens/Community';
 import theme from './src/theme';
@@ -138,6 +140,16 @@ function CaptureStack() {
         name="WorkshopSteps"
         component={WorkSteps}
         options={{ title: t('nav_workshop_mode') }}
+      />
+      <Stack.Screen
+        name="WholeHouse"
+        component={WholeHouse}
+        options={{ title: 'Whole House Advice' }}
+      />
+      <Stack.Screen
+        name="WholeHouseResult"
+        component={WholeHouseResult}
+        options={{ title: 'House Suggestions' }}
       />
     </Stack.Navigator>
   );

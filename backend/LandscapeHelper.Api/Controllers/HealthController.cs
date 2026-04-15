@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 
-namespace DIYHelper2.Api.Controllers;
+namespace LandscapeHelper.Api.Controllers;
 
 [ApiController]
 [Route("api/health")]

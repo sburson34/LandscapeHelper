@@ -1,10 +1,10 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: DIYHelper2 API - Elastic Beanstalk with HTTPS, Route 53, and Secrets Manager
+Description: Landscape Helper API - Elastic Beanstalk with HTTPS, Route 53, and Secrets Manager
 
 Parameters:
   EnvironmentName:
     Type: String
-    Default: diyhelper2-api-prod
+    Default: landscape-helper-api-prod
     Description: Name for the EB environment
   SecretArn:
     Type: String
@@ -12,7 +12,7 @@ Parameters:
     Description: ARN of the OpenAI API key secret in Secrets Manager
   SolutionStackName:
     Type: String
-    Default: 64bit Amazon Linux 2023 v3.10.0 running .NET 10
+    Default: 64bit Amazon Linux 2023 v3.10.1 running .NET 10
     Description: >-
       EB solution stack. Use "aws elasticbeanstalk list-available-solution-stacks"
       to find the latest .NET stack.
@@ -22,12 +22,12 @@ Parameters:
     Description: EC2 instance type
   CertificateArn:
     Type: String
-    Default: arn:aws:acm:us-east-1:514994861622:certificate/0f0f1df1-bc1e-4659-b9c2-99f5e5d6032d
-    Description: ACM certificate ARN for api.diyhelper.org
+    Default: arn:aws:acm:us-east-1:514994861622:certificate/67ee78e6-ed14-495e-8449-f3512841ebd8
+    Description: ACM certificate ARN for landscape.diyhelper.org
   HostedZoneId:
     Type: String
     Default: Z067931522S04P9BEZAUK
-    Description: Route 53 hosted zone ID for diyhelper.org
+    Description: Route 53 hosted zone ID for landscapehelper.org
 
 Resources:
 
@@ -68,8 +68,8 @@ Resources:
   EBApplication:
     Type: AWS::ElasticBeanstalk::Application
     Properties:
-      ApplicationName: DIYHelper2-Api
-      Description: DIYHelper2 backend API
+      ApplicationName: LandscapeHelper-Api
+      Description: Landscape Helper backend API
 
   # --- EB Environment (ALB with HTTPS) ---
   EBEnvironment:
@@ -154,12 +154,12 @@ Resources:
           OptionName: MaxSize
           Value: '2'
 
-  # --- Route 53 alias record: api.diyhelper.org → ALB ---
+  # --- Route 53 alias record: api.landscapehelper.org → ALB ---
   DNSRecord:
     Type: AWS::Route53::RecordSet
     Properties:
       HostedZoneId: !Ref HostedZoneId
-      Name: api.diyhelper.org.
+      Name: landscape.diyhelper.org.
       Type: A
       AliasTarget:
         DNSName: !GetAtt EBEnvironment.EndpointURL
@@ -172,7 +172,7 @@ Outputs:
     Value: !GetAtt EBEnvironment.EndpointURL
   ApiUrl:
     Description: Public API URL
-    Value: https://api.diyhelper.org
+    Value: https://landscape.diyhelper.org
   ApplicationName:
     Description: EB application name
     Value: !Ref EBApplication

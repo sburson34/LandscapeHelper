@@ -1,10 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
-# DIYHelper2 API - CloudFormation deployment script
+# Landscape Helper API - CloudFormation deployment script
 # Usage: ./deploy.sh [SECRET_ARN]
 
-STACK_NAME="diyhelper2-api"
+STACK_NAME="landscape-helper-api"
 REGION="us-east-1"
 SECRET_ARN="${1:-arn:aws:secretsmanager:us-east-1:514994861622:secret:OpenAI_APIKEY-yVJyyp}"
 
@@ -32,7 +32,7 @@ aws cloudformation describe-stacks \
 
 echo ""
 echo "==> Next steps:"
-echo "  1. cd backend/DIYHelper2.Api"
+echo "  1. cd backend/LandscapeHelper.Api"
 echo "  2. dotnet publish -c Release --self-contained -r linux-x64"
 echo "  3. cd bin/Release/net10.0/publish"
 echo "  4. zip -r deploy.zip ."

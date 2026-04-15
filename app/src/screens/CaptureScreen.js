@@ -264,14 +264,14 @@ export default function CaptureScreen({ navigation, route }) {
         customerName: profile.name,
         customerEmail: profile.email,
         customerPhone: profile.phone || '',
-        projectTitle: description.slice(0, 60) || 'DIY Help Request',
+        projectTitle: description.slice(0, 60) || 'Landscaping Help Request',
         userDescription: description,
         projectData: { description, mediaCount: media.length },
         imageBase64: firstImage?.base64 || null,
       });
       await saveLocalHelpRequest({
         id: String(result.id),
-        projectTitle: description.slice(0, 60) || 'DIY Help Request',
+        projectTitle: description.slice(0, 60) || 'Landscaping Help Request',
         userDescription: description,
         status: 'sent',
       });
@@ -438,6 +438,22 @@ export default function CaptureScreen({ navigation, route }) {
            </TouchableOpacity>
         </View>
       </View>
+
+      {/* Whole House Advice button */}
+      <TouchableOpacity
+        style={styles.wholeHouseButton}
+        onPress={() => navigation.navigate('WholeHouse')}
+        activeOpacity={0.7}
+      >
+        <View style={styles.wholeHouseIconCircle}>
+          <Icon name="home" size={24} color={theme.colors.primary} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.wholeHouseTitle}>{t('whole_house_title')}</Text>
+          <Text style={styles.wholeHouseSub}>{t('whole_house_sub')}</Text>
+        </View>
+        <Icon name="chevron-forward" size={20} color={theme.colors.textSecondary} />
+      </TouchableOpacity>
 
       <View style={styles.footerInfo}>
         <Icon name="information-circle-outline" size={16} color={theme.colors.textSecondary} />
@@ -789,4 +805,17 @@ const styles = StyleSheet.create({
   clarifySkipText: { color: '#64748B', fontWeight: '700' },
   clarifyGo: { flex: 2, padding: 14, borderRadius: 12, backgroundColor: theme.colors.primary, alignItems: 'center' },
   clarifyGoText: { color: '#fff', fontWeight: '800' },
+  wholeHouseButton: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff',
+    borderRadius: 20, padding: 16, marginTop: 16,
+    borderWidth: 2, borderColor: theme.colors.primary, borderStyle: 'dashed',
+    shadowColor: '#64748B', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06, shadowRadius: 8, elevation: 2,
+  },
+  wholeHouseIconCircle: {
+    width: 48, height: 48, borderRadius: 24, backgroundColor: '#E8F5E9',
+    justifyContent: 'center', alignItems: 'center', marginRight: 12,
+  },
+  wholeHouseTitle: { fontSize: 15, fontWeight: '800', color: '#0F172A' },
+  wholeHouseSub: { fontSize: 12, color: '#64748B', marginTop: 2 },
 });

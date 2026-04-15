@@ -25,10 +25,10 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace "com.diyhelper2"
+    namespace "com.landscapehelper"
 
     defaultConfig {
-        applicationId "com.diyhelper2"
+        applicationId "com.landscapehelper"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
@@ -59,6 +59,35 @@ android {
         jniLibs {
             def enableLegacyPackaging = findProperty('expo.useLegacyPackaging') ?: 'false'
             useLegacyPackaging enableLegacyPackaging.toBoolean()
+        }
+    }
+}
+
+// Exclude the duplicate ExpoModulesPackageList class that the expo library
+// generates alongside the app-level copy from expo-autolinking.
+configurations.all {
+    exclude group: 'expo.modules', module: 'ExpoModulesPackageList'
+}
+
+// After the expo library transforms produce dex files, strip the duplicate class
+// so mergeDexRelease doesn't hit "defined multiple times".
+afterEvaluate {
+    android.applicationVariants.all { variant ->
+        def variantName = variant.name.capitalize()
+        def mergeDexTask = tasks.findByName("mergeDex${variantName}")
+        if (mergeDexTask != null) {
+            mergeDexTask.doFirst {
+                // Find and delete the expo library's copy of ExpoModulesPackageList dex
+                def expoTransforms = file("${rootProject.projectDir}/../node_modules/expo/android/build/.transforms")
+                if (expoTransforms.exists()) {
+                    fileTree(expoTransforms).matching {
+                        include "**/ExpoModulesPackageList*.dex"
+                    }.each { dexFile ->
+                        logger.lifecycle("Removing duplicate ExpoModulesPackageList dex: ${dexFile}")
+                        dexFile.delete()
+                    }
+                }
+            }
         }
     }
 }

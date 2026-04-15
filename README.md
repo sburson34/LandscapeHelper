@@ -1,24 +1,24 @@
-# DIYHelper2
+# Landscape Helper
 
-A full native phone app for DIY project assistance.
+A full native phone app for landscaping and garden improvement assistance.
 
 ## Project Structure
 
 - `app/`: React Native mobile application.
-- `backend/`: C# ASP.NET Core API using OpenAI for analysis.
+- `backend/`: C# ASP.NET Core API using OpenAI for landscaping analysis.
 
 ## Features
 
-- Take pictures and videos of your DIY project.
-- Record or type descriptions.
-- AI-powered step-by-step list generation.
-- Full native experience.
+- Take pictures of your outdoor area.
+- Describe your landscaping vision.
+- AI-powered step-by-step garden design generation.
+- Get professional help from local landscapers.
 
 ## Getting Started
 
 ### Backend
 
-1. Navigate to `backend/DIYHelper2.Api`.
+1. Navigate to `backend/LandscapeHelper.Api`.
 2. Set your `OPENAI_API_KEY` environment variable.
 3. Run `dotnet run`.
 4. The API will be available at `http://localhost:5206`.

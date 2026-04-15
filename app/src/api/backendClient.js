@@ -1,5 +1,5 @@
 import { API_BASE_URL } from '../config/api';
-import { getCachedAnalysis, setCachedAnalysis, getAppPrefs, getToolInventory } from '../utils/storage';
+import { getCachedAnalysis, setCachedAnalysis, getAppPrefs, getToolInventory, getAuthToken } from '../utils/storage';
 
 const BASE_URL = API_BASE_URL;
 
@@ -130,6 +130,77 @@ const browseCommunityProjects = async (query = '') => {
   return response.json();
 };
 
+// ── whole-house advice ────────────────────────────────────────────
+const getWholeHouseAdvice = async ({ photos, budget, ideas, language = 'en' }) => {
+  const url = `${BASE_URL}/api/house-advice`;
+
+  // Convert the photos map { front: [{uri,base64,mimeType},...], ... } into
+  // the shape the backend expects: { front: [{base64,mimeType},...], ... }
+  const toPayload = (arr) =>
+    (arr || []).map(p => ({ base64: p.base64, mimeType: p.mimeType }));
+
+  // Attach JWT if signed in so the backend persists this session for history.
+  const token = await getAuthToken();
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      front: toPayload(photos.front),
+      left: toPayload(photos.left),
+      back: toPayload(photos.back),
+      right: toPayload(photos.right),
+      budget,
+      ideas,
+      language,
+    }),
+  });
+  if (!response.ok) {
+    let err = {};
+    try { err = await response.json(); } catch {}
+    throw new Error(err.error || `Request failed: ${response.status}`);
+  }
+  return response.json();
+};
+
+// ── auth: register / login / me ───────────────────────────────────
+const register = async ({ email, password, displayName }) => {
+  return jsonFetch(`${BASE_URL}/api/auth/register`, { email, password, displayName });
+};
+
+const login = async ({ email, password }) => {
+  return jsonFetch(`${BASE_URL}/api/auth/login`, { email, password });
+};
+
+const getMe = async () => {
+  const token = await getAuthToken();
+  if (!token) throw new Error('Not signed in.');
+  const res = await fetch(`${BASE_URL}/api/auth/me`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`Auth check failed: ${res.status}`);
+  return res.json();
+};
+
+// ── translate strings via backend proxy (Google Translate v2) ─────
+const translateStrings = async (texts, target, source = 'en') => {
+  const url = `${BASE_URL}/api/translate`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ q: texts, target, source }),
+  });
+  if (!response.ok) {
+    let err = {};
+    try { err = await response.json(); } catch {}
+    throw new Error(err.error || `Translate failed: ${response.status}`);
+  }
+  const data = await response.json();
+  return data.translations || [];
+};
+
 export {
   analyzeProject,
   askHelper,
@@ -142,4 +213,9 @@ export {
   listHelpRequests,
   submitCommunityProject,
   browseCommunityProjects,
+  getWholeHouseAdvice,
+  translateStrings,
+  register,
+  login,
+  getMe,
 };

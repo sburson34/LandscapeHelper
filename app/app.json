@@ -1,19 +1,19 @@
 {
-  "name": "DIYHelper2",
-  "displayName": "DIYHelper2",
+  "name": "LandscapeHelper",
+  "displayName": "Landscape Helper",
   "expo": {
-    "name": "DIYHelper2",
-    "slug": "diyhelper2",
+    "name": "Landscape Helper",
+    "slug": "landscape-helper",
     "version": "1.0.0",
     "assetBundlePatterns": [
       "**/*"
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.diyhelper2"
+      "bundleIdentifier": "com.landscapehelper"
     },
     "android": {
-      "package": "com.diyhelper2"
+      "package": "com.landscapehelper"
     },
     "plugins": [
       "expo-audio",

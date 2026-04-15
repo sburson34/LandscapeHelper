@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Landscape Helper - Admin Dashboard</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <div class="header-row">
+      <div>
+        <h1 data-i18n>Landscape Helper Admin</h1>
+        <p class="subtitle" data-i18n>Professional Help Requests</p>
+      </div>
+      <div class="header-right">
+        <div class="language-selector">
+          <label for="lang-select" data-i18n>Language</label>
+          <select id="lang-select"></select>
+        </div>
+        <div id="user-bar" class="user-bar hidden">
+          <span id="user-email"></span>
+          <button id="logout-btn" class="logout-btn" data-i18n>Sign out</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- Login gate (hidden after successful admin login) -->
+    <section id="login-section" class="login-section">
+      <div class="login-card">
+        <h2 data-i18n>Admin sign in</h2>
+        <p class="login-sub" data-i18n>This dashboard requires an admin account.</p>
+        <form id="admin-login-form">
+          <label data-i18n>Email
+            <input type="email" name="email" required autocomplete="email">
+          </label>
+          <label data-i18n>Password
+            <input type="password" name="password" required autocomplete="current-password">
+          </label>
+          <button class="login-submit" type="submit" data-i18n>Sign in</button>
+          <p id="admin-login-error" class="error-text"></p>
+        </form>
+      </div>
+    </section>
+
+    <div id="admin-content" class="hidden">
+    <div class="filters">
+      <button class="filter-btn active" data-status="" data-i18n>All</button>
+      <button class="filter-btn" data-status="new" data-i18n>New</button>
+      <button class="filter-btn" data-status="sent" data-i18n>Sent</button>
+      <button class="filter-btn" data-status="quoted" data-i18n>Quoted</button>
+      <button class="filter-btn" data-status="scheduled" data-i18n>Scheduled</button>
+      <button class="filter-btn" data-status="in_progress" data-i18n>In Progress</button>
+      <button class="filter-btn" data-status="done" data-i18n>Done</button>
+      <button class="filter-btn" data-status="completed" data-i18n>Completed</button>
+      <button class="filter-btn" data-status="cancelled" data-i18n>Cancelled</button>
+    </div>
+
+    <div id="request-list" class="request-list"></div>
+
+    <!-- Detail Panel (hidden by default) -->
+    <div id="detail-panel" class="detail-panel hidden">
+      <div class="detail-header">
+        <button id="back-btn" class="back-btn" data-i18n>&larr; Back to List</button>
+        <button id="delete-btn" class="delete-btn" data-i18n>Delete</button>
+      </div>
+      <div id="detail-content"></div>
+    </div>
+    </div>
+  </main>
+
+  <script src="languages.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

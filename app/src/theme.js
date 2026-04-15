@@ -1,31 +1,31 @@
 // Light theme palette (kept as default export so legacy `import theme from '../theme'` still works)
 const light = {
-  primary: '#FCA004', // Action Orange
-  secondary: '#0A4FA6', // Professional Blue
-  accent: '#FDD314', // Construction Yellow
-  background: '#FBFBFB',
+  primary: '#2E7D32', // Forest Green
+  secondary: '#5D4037', // Earthy Brown
+  accent: '#C0CA33', // Lime/Sapling
+  background: '#F1F8E9', // Very light green
   surface: '#FFFFFF',
-  text: '#0F2253', // Dark Navy
-  textSecondary: '#636E72',
-  success: '#00B894',
-  warning: '#FDD314',
-  danger: '#A22601',
-  border: '#DFE6E9',
+  text: '#1B5E20', // Dark Green
+  textSecondary: '#6D4C41',
+  success: '#4CAF50',
+  warning: '#FBC02D',
+  danger: '#D84315',
+  border: '#C8E6C9',
   shadow: '#000000',
 };
 
 const dark = {
-  primary: '#FCA004',
-  secondary: '#3A82E0',
-  accent: '#FDD314',
-  background: '#0B1220',
-  surface: '#172033',
-  text: '#F4F6FB',
-  textSecondary: '#9CA9C2',
-  success: '#34D399',
-  warning: '#FDD314',
-  danger: '#F87171',
-  border: '#2A3550',
+  primary: '#81C784', // Muted Green
+  secondary: '#8D6E63', // Muted Brown
+  accent: '#DCE775', // Muted Lime
+  background: '#1B2E1C', // Dark Forest
+  surface: '#2C3E2D', // Deep Leaf
+  text: '#E8F5E9', // Lightest Green
+  textSecondary: '#BCAAA4',
+  success: '#66BB6A',
+  warning: '#FFF176',
+  danger: '#FF7043',
+  border: '#388E3C',
   shadow: '#000000',
 };
 

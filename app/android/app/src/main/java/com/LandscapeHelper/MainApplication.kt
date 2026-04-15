@@ -1,4 +1,4 @@
-package com.diyhelper2
+package com.landscapehelper
 
 import android.app.Application
 import android.content.res.Configuration

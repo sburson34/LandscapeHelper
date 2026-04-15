@@ -55,7 +55,11 @@ app/app_apk_content/
 # Backend specific
 [Bb]in/
 [Oo]bj/
+publish/
 *.user
 *.suo
 *.sln.docstates
 .vs/
+*.db
+*.db-shm
+*.db-wal
