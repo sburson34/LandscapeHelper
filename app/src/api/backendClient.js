@@ -165,6 +165,23 @@ const getWholeHouseAdvice = async ({ photos, budget, ideas, language = 'en' }) =
   return response.json();
 };
 
+// ── shrubbery advice ──────────────────────────────────────────────
+const getShrubberyAdvice = async ({ photos, zip, notes, language = 'en' }) => {
+  const url = `${BASE_URL}/api/shrubbery-advice`;
+  const payload = (photos || []).map(p => ({ base64: p.base64, mimeType: p.mimeType }));
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ photos: payload, zip, notes, language }),
+  });
+  if (!response.ok) {
+    let err = {};
+    try { err = await response.json(); } catch {}
+    throw new Error(err.error || `Request failed: ${response.status}`);
+  }
+  return response.json();
+};
+
 // ── auth: register / login / me ───────────────────────────────────
 const register = async ({ email, password, displayName }) => {
   return jsonFetch(`${BASE_URL}/api/auth/register`, { email, password, displayName });
@@ -214,6 +231,7 @@ export {
   submitCommunityProject,
   browseCommunityProjects,
   getWholeHouseAdvice,
+  getShrubberyAdvice,
   translateStrings,
   register,
   login,

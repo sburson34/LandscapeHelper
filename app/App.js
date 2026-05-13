@@ -19,6 +19,8 @@ import Emergency from './src/screens/Emergency';
 import Diagnose from './src/screens/Diagnose';
 import WholeHouse from './src/screens/WholeHouseScreen';
 import WholeHouseResult from './src/screens/WholeHouseResultScreen';
+import Shrubbery from './src/screens/ShrubberyScreen';
+import ShrubberyResult from './src/screens/ShrubberyResultScreen';
 import Quotes from './src/screens/Quotes';
 import Community from './src/screens/Community';
 import theme from './src/theme';
@@ -150,6 +152,16 @@ function CaptureStack() {
         name="WholeHouseResult"
         component={WholeHouseResult}
         options={{ title: 'House Suggestions' }}
+      />
+      <Stack.Screen
+        name="Shrubbery"
+        component={Shrubbery}
+        options={{ title: 'Shrubbery Helper' }}
+      />
+      <Stack.Screen
+        name="ShrubberyResult"
+        component={ShrubberyResult}
+        options={{ title: 'Shrub Recommendations' }}
       />
     </Stack.Navigator>
   );
@@ -314,6 +326,22 @@ function AppContent() {
             headerLeft: () => null,
             drawerIcon: ({ color, size }) => <Icon name="search-outline" size={size} color={color} />,
           })}
+        />
+        <Drawer.Screen
+          name="ShrubberyHelper"
+          component={Shrubbery}
+          listeners={({ navigation }) => ({
+            drawerItemPress: (e) => {
+              e.preventDefault();
+              navigation.navigate('NewProject', { screen: 'Shrubbery' });
+              navigation.closeDrawer();
+            },
+          })}
+          options={{
+            title: 'Shrubbery Helper',
+            headerShown: false,
+            drawerIcon: ({ color, size }) => <Icon name="leaf-outline" size={size} color={color} />,
+          }}
         />
         <Drawer.Screen
           name="Quotes"

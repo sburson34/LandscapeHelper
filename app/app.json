@@ -10,15 +10,27 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.landscapehelper"
+      "bundleIdentifier": "com.landscapehelper",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Landscape Helper uses your location to tailor shrub and landscaping advice to your local climate and upcoming weather."
+      }
     },
     "android": {
-      "package": "com.landscapehelper"
+      "package": "com.landscapehelper",
+      "permissions": [
+        "ACCESS_COARSE_LOCATION"
+      ]
     },
     "plugins": [
       "expo-audio",
       "expo-speech-recognition",
-      "expo-sharing"
+      "expo-sharing",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Landscape Helper uses your location to tailor shrub and landscaping advice to your local climate and upcoming weather."
+        }
+      ]
     ]
   }
 }

@@ -6,6 +6,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using OpenAI.Chat;
 using OpenAI;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Linq;
@@ -1105,6 +1106,319 @@ IMPORTANT:
     }
 });
 
+// ── Weather fetch (Zippopotam.us + Open-Meteo, both keyless) ──────
+// Returns a tuple of (placeName, humanSummary, dailyForecast[]) or null on failure.
+// Caller decides whether to fail the request or proceed without weather.
+async Task<WeatherInfo?> FetchWeatherAsync(string zip, ILogger logger, CancellationToken ct)
+{
+    try
+    {
+        // Step 1: zip → lat/lon/place via Zippopotam.us (US-only; free, no key)
+        var geoUrl = $"https://api.zippopotam.us/us/{Uri.EscapeDataString(zip)}";
+        using var geoResp = await sharedHttpClient.GetAsync(geoUrl, ct);
+        if (!geoResp.IsSuccessStatusCode)
+        {
+            logger.LogWarning("weather: zippopotam returned {Status} for zip {Zip}", geoResp.StatusCode, zip);
+            return null;
+        }
+        using var geoStream = await geoResp.Content.ReadAsStreamAsync(ct);
+        using var geoDoc = await JsonDocument.ParseAsync(geoStream, cancellationToken: ct);
+        if (!geoDoc.RootElement.TryGetProperty("places", out var placesEl) ||
+            placesEl.ValueKind != JsonValueKind.Array || placesEl.GetArrayLength() == 0)
+        {
+            return null;
+        }
+        var place = placesEl[0];
+        string placeName = place.TryGetProperty("place name", out var pn) ? pn.GetString() ?? "" : "";
+        string stateAbbr = place.TryGetProperty("state abbreviation", out var sa) ? sa.GetString() ?? "" : "";
+        if (!double.TryParse(place.GetProperty("latitude").GetString(),
+                System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double lat))
+            return null;
+        if (!double.TryParse(place.GetProperty("longitude").GetString(),
+                System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double lon))
+            return null;
+
+        // Step 2: lat/lon → 14-day forecast via Open-Meteo (free, no key)
+        var forecastUrl =
+            $"https://api.open-meteo.com/v1/forecast?latitude={lat.ToString(System.Globalization.CultureInfo.InvariantCulture)}" +
+            $"&longitude={lon.ToString(System.Globalization.CultureInfo.InvariantCulture)}" +
+            "&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,weather_code,wind_speed_10m_max" +
+            "&current=temperature_2m,weather_code,wind_speed_10m" +
+            "&temperature_unit=fahrenheit&precipitation_unit=inch&wind_speed_unit=mph" +
+            "&forecast_days=14&timezone=auto";
+
+        using var fcResp = await sharedHttpClient.GetAsync(forecastUrl, ct);
+        if (!fcResp.IsSuccessStatusCode)
+        {
+            logger.LogWarning("weather: open-meteo returned {Status}", fcResp.StatusCode);
+            return null;
+        }
+        using var fcStream = await fcResp.Content.ReadAsStreamAsync(ct);
+        using var fcDoc = await JsonDocument.ParseAsync(fcStream, cancellationToken: ct);
+        var daily = fcDoc.RootElement.GetProperty("daily");
+        var times = daily.GetProperty("time");
+        var maxT = daily.GetProperty("temperature_2m_max");
+        var minT = daily.GetProperty("temperature_2m_min");
+        var precip = daily.GetProperty("precipitation_sum");
+        var precipProb = daily.TryGetProperty("precipitation_probability_max", out var pp) ? pp : default;
+        var wcode = daily.GetProperty("weather_code");
+        var wind = daily.GetProperty("wind_speed_10m_max");
+
+        var days = new List<DailyForecast>();
+        int count = times.GetArrayLength();
+        for (int i = 0; i < count; i++)
+        {
+            days.Add(new DailyForecast(
+                times[i].GetString() ?? "",
+                maxT[i].ValueKind == JsonValueKind.Number ? maxT[i].GetDouble() : (double?)null,
+                minT[i].ValueKind == JsonValueKind.Number ? minT[i].GetDouble() : (double?)null,
+                precip[i].ValueKind == JsonValueKind.Number ? precip[i].GetDouble() : (double?)null,
+                (precipProb.ValueKind == JsonValueKind.Array && i < precipProb.GetArrayLength() && precipProb[i].ValueKind == JsonValueKind.Number)
+                    ? precipProb[i].GetInt32() : (int?)null,
+                wcode[i].ValueKind == JsonValueKind.Number ? wcode[i].GetInt32() : (int?)null,
+                wind[i].ValueKind == JsonValueKind.Number ? wind[i].GetDouble() : (double?)null,
+                WeatherCodeToDescription(wcode[i].ValueKind == JsonValueKind.Number ? wcode[i].GetInt32() : -1)
+            ));
+        }
+
+        // Build a concise human summary for the prompt
+        double totalPrecip = 0; int rainyDays = 0; int freezeDays = 0;
+        double? hottest = null, coldest = null;
+        foreach (var d in days)
+        {
+            if (d.PrecipitationInches is double p) { totalPrecip += p; if (p >= 0.1) rainyDays++; }
+            if (d.MinF is double mn) { if (mn <= 32) freezeDays++; if (coldest == null || mn < coldest) coldest = mn; }
+            if (d.MaxF is double mx) { if (hottest == null || mx > hottest) hottest = mx; }
+        }
+        string fullPlace = string.IsNullOrEmpty(stateAbbr) ? placeName : $"{placeName}, {stateAbbr}";
+        string summary = $"Forecast for {fullPlace} (next {days.Count} days): highs reaching {hottest:F0}°F, lows down to {coldest:F0}°F, " +
+                         $"{totalPrecip:F1}\" total precipitation expected across {rainyDays} rainy day(s)" +
+                         (freezeDays > 0 ? $", {freezeDays} day(s) at or below freezing." : ".");
+
+        return new WeatherInfo(fullPlace, lat, lon, summary, days);
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "weather: failed to fetch for zip {Zip}", zip);
+        return null;
+    }
+}
+
+// WMO weather codes → human description. See https://open-meteo.com/en/docs.
+static string WeatherCodeToDescription(int code) => code switch
+{
+    0 => "Clear",
+    1 => "Mostly clear",
+    2 => "Partly cloudy",
+    3 => "Overcast",
+    45 or 48 => "Fog",
+    51 or 53 or 55 => "Drizzle",
+    56 or 57 => "Freezing drizzle",
+    61 => "Light rain",
+    63 => "Rain",
+    65 => "Heavy rain",
+    66 or 67 => "Freezing rain",
+    71 => "Light snow",
+    73 => "Snow",
+    75 => "Heavy snow",
+    77 => "Snow grains",
+    80 => "Light showers",
+    81 => "Showers",
+    82 => "Violent showers",
+    85 or 86 => "Snow showers",
+    95 => "Thunderstorm",
+    96 or 99 => "Thunderstorm with hail",
+    _ => "Unknown"
+};
+
+// ── Shrubbery advice ──────────────────────────────────────────────
+app.MapPost("/api/shrubbery-advice", async ([FromBody] ShrubberyRequest req, HttpContext http, ILogger<Program> logger) =>
+{
+    try
+    {
+        if (string.IsNullOrEmpty(openAiKey))
+            return Results.Json(new { error = "OPENAI_API_KEY is not configured." }, statusCode: 500);
+
+        // Fetch real weather data if a zip is provided. Non-fatal on failure —
+        // the AI falls back to generic regional reasoning if the forecast is unavailable.
+        WeatherInfo? weather = null;
+        if (!string.IsNullOrWhiteSpace(req.Zip))
+        {
+            weather = await FetchWeatherAsync(req.Zip.Trim(), logger, http.RequestAborted);
+        }
+
+        var clientOptions = new OpenAIClientOptions { NetworkTimeout = TimeSpan.FromMinutes(3) };
+        ChatClient client = new(model: "gpt-4o", new ApiKeyCredential(openAiKey), clientOptions);
+
+        var userParts = new List<ChatMessageContentPart>();
+        int imageCount = 0;
+        if (req.Photos != null)
+        {
+            foreach (var photo in req.Photos)
+            {
+                if (string.IsNullOrEmpty(photo.Base64)) continue;
+                try
+                {
+                    imageCount++;
+                    byte[] data = Convert.FromBase64String(photo.Base64);
+                    userParts.Add(ChatMessageContentPart.CreateTextPart($"[Photo {imageCount}]"));
+                    userParts.Add(ChatMessageContentPart.CreateImagePart(BinaryData.FromBytes(data), photo.MimeType ?? "image/jpeg"));
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "shrubbery-advice: failed to decode image {Index}", imageCount);
+                }
+            }
+        }
+
+        if (imageCount == 0)
+            return Results.Json(new { error = "Please provide at least one photo." }, statusCode: 400);
+
+        string zipClause;
+        if (weather != null)
+        {
+            // Real forecast available — give the model the actual data instead of letting it guess.
+            var sb = new StringBuilder();
+            sb.Append($"\nThe homeowner is located in {weather.Place} (ZIP {req.Zip}). Use this to determine the USDA hardiness zone and current growing season.");
+            sb.Append($"\nREAL 14-DAY FORECAST (from Open-Meteo — not estimated): {weather.Summary}");
+            sb.Append("\nDaily detail:");
+            int shown = 0;
+            foreach (var d in weather.Daily)
+            {
+                if (shown++ >= 10) break;
+                sb.Append($"\n  {d.Date}: high {d.MaxF:F0}°F, low {d.MinF:F0}°F, {d.PrecipitationInches:F2}\" precip");
+                if (d.PrecipitationProbability.HasValue) sb.Append($" ({d.PrecipitationProbability}% chance)");
+                sb.Append($", {d.Description}");
+            }
+            sb.Append("\nBase your timing and urgency on this actual forecast — call out specific days where weather helps or hinders the work.");
+            zipClause = sb.ToString();
+        }
+        else if (!string.IsNullOrWhiteSpace(req.Zip))
+        {
+            zipClause = $"\nThe homeowner's ZIP code is {req.Zip}, but a forecast could not be retrieved. Use the ZIP to infer the USDA hardiness zone, typical regional climate, and likely weather for this time of year.";
+        }
+        else
+        {
+            zipClause = "\nNo ZIP code was provided — make reasonable assumptions about a temperate climate and note that timing may shift by region.";
+        }
+        string notesClause = !string.IsNullOrWhiteSpace(req.Notes)
+            ? $"\nHomeowner notes: \"{req.Notes}\"."
+            : "";
+        string today = DateTime.UtcNow.ToString("yyyy-MM-dd");
+
+        bool isEs = string.Equals(req.Language, "es", StringComparison.OrdinalIgnoreCase);
+        string lang = isEs ? " All text fields in the JSON response MUST be written in Spanish." : "";
+
+        string prompt = $@"I've attached {imageCount} photo(s) of the homeowner's existing shrubs/bushes/hedges. Today's date is {today}.{zipClause}{notesClause}
+
+Evaluate each distinct shrub (or grouping of the same species) visible in the photos. For each one, identify the species if possible, assess its current health/shape, and recommend what the homeowner should do RIGHT NOW — taking into account the current season, today's date, and the upcoming weather typical for this region and time of year.
+
+Return a JSON object with exactly this structure:
+{{
+  ""season"": ""current season in this region (e.g. 'Late Spring')"",
+  ""hardiness_zone"": ""best-guess USDA zone (e.g. '7a') or null if ZIP not provided"",
+  ""overall_notes"": ""1-2 sentence overview of the overall state of the shrubs"",
+  ""shrubs"": [
+    {{
+      ""name"": ""Common name of the shrub, or a descriptor like 'Shrub near front door'"",
+      ""species_guess"": ""Best-guess species/cultivar, or 'Unknown'"",
+      ""current_condition"": ""1-2 sentences on what you see (overgrown, healthy, diseased, leggy, dead branches, etc.)"",
+      ""recommended_action"": ""prune|cut back hard|light trim|shape|replace|remove|fertilize|mulch|water more|leave alone|treat pest/disease"",
+      ""action_summary"": ""1 sentence plain-language description of what to do"",
+      ""timing"": ""When exactly to do this — e.g. 'Now, before new growth hardens' or 'Wait until after bloom in 3 weeks'"",
+      ""urgency"": ""low|medium|high"",
+      ""difficulty"": ""easy|medium|hard"",
+      ""estimated_time"": ""e.g. '30 min' or '1 afternoon'"",
+      ""estimated_cost"": ""e.g. '$0' or '$25-$60'"",
+      ""tools_needed"": [""hand pruners"", ""loppers""],
+      ""steps"": [""Step 1"", ""Step 2"", ""Step 3""],
+      ""pro_tip"": ""One helpful tip specific to this shrub and this season"",
+      ""warnings"": [""Any warnings — e.g. 'Do not prune now or you'll remove next year's buds'""],
+      ""shopping_links"": [""specific product name 1"", ""specific product name 2""]
+    }}
+  ]
+}}
+
+IMPORTANT:
+- Base your timing and urgency on today's date ({today}) and the typical weather for this region over the next few weeks.
+- If a shrub should NOT be pruned right now (e.g. spring-flowering shrubs after bud set), say so clearly in warnings and set recommended_action accordingly.
+- If a shrub looks dead, diseased, or badly overgrown beyond recovery, recommend replacement and suggest 1-2 climate-appropriate alternatives in steps/pro_tip.
+- Be specific about species when possible — homeowners want to know what they have.
+- For shopping_links list specific product names (they'll be converted to store links).{lang}";
+
+        userParts.Insert(0, ChatMessageContentPart.CreateTextPart(prompt));
+
+        var messages = new List<ChatMessage>
+        {
+            new SystemChatMessage("You are a professional arborist and horticulturist who evaluates shrubs from photos and gives timing-aware, region-aware pruning and care advice. Return valid JSON only."),
+            new UserChatMessage(userParts),
+        };
+
+        ChatCompletion completion = await client.CompleteChatAsync(messages);
+        string raw = completion.Content[0].Text.Trim();
+        logger.LogInformation("shrubbery-advice raw response length: {Len}", raw.Length);
+
+        int a = raw.IndexOf('{'); int b = raw.LastIndexOf('}');
+        if (a >= 0 && b > a) raw = raw.Substring(a, b - a + 1);
+
+        try
+        {
+            var resultDict = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(raw);
+            if (resultDict!.TryGetValue("shrubs", out var shrubsEl) && shrubsEl.ValueKind == JsonValueKind.Array)
+            {
+                var updated = new List<Dictionary<string, object>>();
+                foreach (var shrub in shrubsEl.EnumerateArray())
+                {
+                    var sDict = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(shrub.GetRawText())!;
+                    if (sDict.TryGetValue("shopping_links", out var shopEl) && shopEl.ValueKind == JsonValueKind.Array)
+                    {
+                        var affiliateLinks = new List<object>();
+                        foreach (var item in shopEl.EnumerateArray())
+                        {
+                            string itemName = item.ValueKind == JsonValueKind.String
+                                ? item.GetString() ?? ""
+                                : item.TryGetProperty("item", out var ip) ? ip.GetString() ?? "" : "";
+                            if (string.IsNullOrWhiteSpace(itemName)) continue;
+                            var encoded = Uri.EscapeDataString(itemName);
+                            affiliateLinks.Add(new
+                            {
+                                item = itemName,
+                                amazon_url = $"https://www.amazon.com/s?k={encoded}&tag={amazonAssociateTag}",
+                                homedepot_url = $"https://www.homedepot.com/s/{encoded}?NCNI-5&irclickid={homeDepotImpactId}"
+                            });
+                        }
+                        sDict["shopping_links"] = JsonSerializer.SerializeToElement(affiliateLinks);
+                    }
+                    var converted = new Dictionary<string, object>();
+                    foreach (var kv in sDict) converted[kv.Key] = kv.Value;
+                    updated.Add(converted);
+                }
+                resultDict["shrubs"] = JsonSerializer.SerializeToElement(updated);
+            }
+
+            // Attach the real forecast (if we have it) so the UI can render it.
+            // This overrides whatever the AI might have said about the weather.
+            if (weather != null)
+            {
+                resultDict["weather_outlook"] = JsonSerializer.SerializeToElement(weather.Summary);
+                resultDict["forecast"] = JsonSerializer.SerializeToElement(weather);
+            }
+
+            return Results.Ok(resultDict);
+        }
+        catch (JsonException ex)
+        {
+            logger.LogError(ex, "shrubbery-advice: failed to parse JSON. Raw: {Raw}", raw);
+            return Results.Json(new { error = "AI returned invalid JSON", rawResponse = raw }, statusCode: 500);
+        }
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "shrubbery-advice error");
+        return Results.Json(new { error = ex.Message }, statusCode: 500);
+    }
+});
+
 // ── Authentication: register / login / me ─────────────────────────
 string IssueJwt(User user)
 {
@@ -1506,3 +1820,30 @@ public record WholeHouseRequest(
     [property: JsonPropertyName("ideas")] string? Ideas,
     [property: JsonPropertyName("language")] string? Language
 );
+
+public record ShrubberyRequest(
+    [property: JsonPropertyName("photos")] WholeHousePhotoItem[]? Photos,
+    [property: JsonPropertyName("zip")] string? Zip,
+    [property: JsonPropertyName("notes")] string? Notes,
+    [property: JsonPropertyName("language")] string? Language
+);
+
+public record DailyForecast(
+    [property: JsonPropertyName("date")] string Date,
+    [property: JsonPropertyName("high_f")] double? MaxF,
+    [property: JsonPropertyName("low_f")] double? MinF,
+    [property: JsonPropertyName("precip_in")] double? PrecipitationInches,
+    [property: JsonPropertyName("precip_prob")] int? PrecipitationProbability,
+    [property: JsonPropertyName("weather_code")] int? WeatherCode,
+    [property: JsonPropertyName("wind_mph")] double? WindMph,
+    [property: JsonPropertyName("description")] string Description
+);
+
+public record WeatherInfo(
+    [property: JsonPropertyName("place")] string Place,
+    [property: JsonPropertyName("latitude")] double Latitude,
+    [property: JsonPropertyName("longitude")] double Longitude,
+    [property: JsonPropertyName("summary")] string Summary,
+    [property: JsonPropertyName("daily")] List<DailyForecast> Daily
+);
+
