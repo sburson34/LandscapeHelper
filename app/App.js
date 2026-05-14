@@ -30,6 +30,7 @@ import ShrubberyResult from './src/screens/ShrubberyResultScreen';
 import Quotes from './src/screens/Quotes';
 import Community from './src/screens/Community';
 import DeleteAccount from './src/screens/DeleteAccountScreen';
+import ScreenErrorBoundary from './src/components/ScreenErrorBoundary';
 import theme from './src/theme';
 import { I18nProvider, useTranslation } from './src/i18n/I18nContext';
 import { ThemeProvider } from './src/ThemeContext';
@@ -78,6 +79,37 @@ const LogoHeader = ({ onPress, title, subtitle }) => (
 const Stack = createNativeStackNavigator();
 const Drawer = createDrawerNavigator();
 
+// Per-screen wrappers so an unhandled render error in one screen renders the
+// boundary's "Try again" fallback instead of red-boxing the whole app. Each
+// boundary resets its `error` state on navigation focus so going Back +
+// returning re-attempts the render.
+const withBoundary = (Component, screenName) => (props) =>
+  React.createElement(
+    ScreenErrorBoundary,
+    { screenName },
+    React.createElement(Component, props),
+  );
+
+const CaptureWithBoundary       = withBoundary(CaptureScreen,        'CaptureScreen');
+const ResultWithBoundary        = withBoundary(ResultScreen,         'ResultScreen');
+const SafetyWithBoundary        = withBoundary(SafetyScreen,         'SafetyScreen');
+const ProjDetWithBoundary       = withBoundary(ProjDet,              'ProjDet');
+const WorkStepsWithBoundary     = withBoundary(WorkSteps,            'WorkSteps');
+const WholeHouseWithBoundary    = withBoundary(WholeHouse,           'WholeHouseScreen');
+const WholeHouseResultWithBoundary = withBoundary(WholeHouseResult,  'WholeHouseResultScreen');
+const ShrubberyWithBoundary     = withBoundary(Shrubbery,            'ShrubberyScreen');
+const ShrubberyResultWithBoundary = withBoundary(ShrubberyResult,    'ShrubberyResultScreen');
+const DeleteAccountWithBoundary = withBoundary(DeleteAccount,        'DeleteAccountScreen');
+const HoneyDoWithBoundary       = withBoundary(HoneyDo,              'HoneyDo');
+const ContractorsWithBoundary   = withBoundary(Contractors,          'Contractors');
+const SettingsWithBoundary      = withBoundary(Settings,             'Settings');
+const InventoryWithBoundary     = withBoundary(Inventory,            'Inventory');
+const ShoppingListWithBoundary  = withBoundary(ShoppingList,         'ShoppingList');
+const EmergencyWithBoundary     = withBoundary(Emergency,            'Emergency');
+const DiagnoseWithBoundary      = withBoundary(Diagnose,             'Diagnose');
+const QuotesWithBoundary        = withBoundary(Quotes,               'Quotes');
+const CommunityWithBoundary     = withBoundary(Community,            'Community');
+
 const MyTheme = {
   ...DefaultTheme,
   colors: {
@@ -114,7 +146,7 @@ function CaptureStack() {
     >
       <Stack.Screen
         name="Capture"
-        component={CaptureScreen}
+        component={CaptureWithBoundary}
         options={({ navigation }) => ({
           headerTitle: () => <LogoHeader onPress={() => goToFreshCapture(navigation)} title={t('app_title')} subtitle={t('app_subtitle')} />,
           headerTitleAlign: 'left',
@@ -132,47 +164,47 @@ function CaptureStack() {
       />
       <Stack.Screen
         name="Result"
-        component={ResultScreen}
+        component={ResultWithBoundary}
         options={{ title: t('nav_project_steps') }}
       />
       <Stack.Screen
         name="Safety"
-        component={SafetyScreen}
+        component={SafetyWithBoundary}
         options={{ title: t('nav_safety_first') }}
       />
       <Stack.Screen
         name="ProjectDetail"
-        component={ProjDet}
+        component={ProjDetWithBoundary}
         options={{ title: t('nav_project_detail') }}
       />
       <Stack.Screen
         name="WorkshopSteps"
-        component={WorkSteps}
+        component={WorkStepsWithBoundary}
         options={{ title: t('nav_workshop_mode') }}
       />
       <Stack.Screen
         name="WholeHouse"
-        component={WholeHouse}
+        component={WholeHouseWithBoundary}
         options={{ title: 'Whole House Advice' }}
       />
       <Stack.Screen
         name="WholeHouseResult"
-        component={WholeHouseResult}
+        component={WholeHouseResultWithBoundary}
         options={{ title: 'House Suggestions' }}
       />
       <Stack.Screen
         name="Shrubbery"
-        component={Shrubbery}
+        component={ShrubberyWithBoundary}
         options={{ title: 'Shrubbery Helper' }}
       />
       <Stack.Screen
         name="ShrubberyResult"
-        component={ShrubberyResult}
+        component={ShrubberyResultWithBoundary}
         options={{ title: 'Shrub Recommendations' }}
       />
       <Stack.Screen
         name="DeleteAccount"
-        component={DeleteAccount}
+        component={DeleteAccountWithBoundary}
         options={{ title: 'Delete Account' }}
       />
     </Stack.Navigator>
@@ -245,7 +277,7 @@ function AppContent() {
         />
         <Drawer.Screen
           name="HoneyDoList"
-          component={HoneyDo}
+          component={HoneyDoWithBoundary}
           options={({ navigation }) => ({
             title: t('nav_honey_do_list'),
             headerShown: true,
@@ -270,7 +302,7 @@ function AppContent() {
         />
         <Drawer.Screen
           name="ContractorList"
-          component={Contractors}
+          component={ContractorsWithBoundary}
           options={({ navigation }) => ({
             title: t('nav_contractor_list'),
             headerShown: true,
@@ -295,7 +327,7 @@ function AppContent() {
         />
         <Drawer.Screen
           name="Inventory"
-          component={Inventory}
+          component={InventoryWithBoundary}
           options={({ navigation }) => ({
             title: t('nav_inventory') || 'My Tools',
             headerShown: true,
@@ -314,7 +346,7 @@ function AppContent() {
         />
         <Drawer.Screen
           name="ShoppingList"
-          component={ShoppingList}
+          component={ShoppingListWithBoundary}
           options={({ navigation }) => ({
             title: t('nav_shopping') || 'Shopping List',
             headerShown: true,
@@ -333,7 +365,7 @@ function AppContent() {
         />
         <Drawer.Screen
           name="Diagnose"
-          component={Diagnose}
+          component={DiagnoseWithBoundary}
           options={({ navigation }) => ({
             title: t('nav_diagnose') || "What's Wrong?",
             headerShown: true,
@@ -352,7 +384,7 @@ function AppContent() {
         />
         <Drawer.Screen
           name="ShrubberyHelper"
-          component={Shrubbery}
+          component={ShrubberyWithBoundary}
           listeners={({ navigation }) => ({
             drawerItemPress: (e) => {
               e.preventDefault();
@@ -368,7 +400,7 @@ function AppContent() {
         />
         <Drawer.Screen
           name="Quotes"
-          component={Quotes}
+          component={QuotesWithBoundary}
           options={({ navigation }) => ({
             title: t('nav_quotes') || 'Quote Tracker',
             headerShown: true,
@@ -387,7 +419,7 @@ function AppContent() {
         />
         <Drawer.Screen
           name="Community"
-          component={Community}
+          component={CommunityWithBoundary}
           options={({ navigation }) => ({
             title: t('nav_community') || 'Community',
             headerShown: true,
@@ -406,7 +438,7 @@ function AppContent() {
         />
         <Drawer.Screen
           name="Emergency"
-          component={Emergency}
+          component={EmergencyWithBoundary}
           options={({ navigation }) => ({
             title: t('nav_emergency') || 'Emergency',
             headerShown: true,
@@ -425,7 +457,7 @@ function AppContent() {
         />
         <Drawer.Screen
           name="Settings"
-          component={Settings}
+          component={SettingsWithBoundary}
           options={({ navigation }) => ({
             title: t('nav_settings'),
             headerShown: true,
