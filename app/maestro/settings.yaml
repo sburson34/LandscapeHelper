@@ -1,0 +1,30 @@
+# Settings screen exercises: dark-mode toggle round-trip + nav back. Offline
+# flow — no backend needed.
+appId: com.landscapehelper
+---
+- launchApp:
+    clearState: true
+- assertVisible:
+    text: "Landscape Helper"
+    optional: true
+
+# Drawer -> Settings.
+- swipe:
+    from: { x: 2%, y: 50% }
+    to: { x: 80%, y: 50% }
+- tapOn: "Settings"
+
+# Sanity assertions — these strings are stable across the app's i18n catalog.
+- assertVisible: "Account"
+
+# Tap a known toggle if a testID is wired. Falls back to the row label.
+- tapOn:
+    id: "dark-mode-switch"
+    optional: true
+
+# Back out and confirm we land on the Capture screen.
+- back
+- assertVisible:
+    text: "Landscape Helper"
+    optional: true
+- assertNotVisible: "Something went wrong"

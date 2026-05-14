@@ -1,0 +1,44 @@
+# Golden path: open Shrubbery Helper from the drawer, supply a ZIP + notes,
+# fire the analyze call, land on the ShrubberyResult screen.
+#
+# Requires:
+#   • Backend reachable at the configured API_BASE_URL (or adb reverse
+#     to a local backend).
+#   • OPENAI_API_KEY set on the backend so /api/shrubbery-advice returns
+#     a real JSON body.
+#
+# Network-dependent — runs in the golden-path branch of e2e-maestro.yml,
+# not on every PR.
+appId: com.landscapehelper
+---
+- launchApp:
+    clearState: true
+- assertVisible:
+    text: "Landscape Helper"
+    optional: true
+
+# Open the drawer and navigate to Shrubbery Helper.
+- swipe:
+    from: { x: 2%, y: 50% }
+    to: { x: 80%, y: 50% }
+- tapOn: "Shrubbery Helper"
+
+# ZIP-code input. Keeps the request region-aware.
+- tapOn:
+    id: "shrubbery-zip-input"
+    optional: true
+- inputText: "30303"
+
+- tapOn:
+    id: "shrubbery-notes-input"
+    optional: true
+- inputText: "Sunny corner along the driveway, hard-pan clay, deer pressure."
+
+- tapOn: "Get recommendations"
+
+# Wait up to 90 s for the AI call — vision-model latency varies a lot.
+- extendedWaitUntil:
+    visible: "Shrub Recommendations"
+    timeout: 90000
+
+- assertNotVisible: "Something went wrong"

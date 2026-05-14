@@ -1,0 +1,39 @@
+# Sign-in flow via Settings -> Account. Exercises the email/password form,
+# the backend /api/auth/login call, and that the signed-in state renders the
+# "Sign out" + "Delete account" buttons.
+#
+# Requires a live backend reachable from the emulator and a test user
+# (TEST_LOGIN_EMAIL / TEST_LOGIN_PASSWORD) seeded against it.
+appId: com.landscapehelper
+---
+- launchApp:
+    clearState: true
+- assertVisible:
+    text: "Landscape Helper"
+    optional: true
+
+# Open the drawer and navigate to Settings.
+- swipe:
+    from: { x: 2%, y: 50% }
+    to: { x: 80%, y: 50% }
+- tapOn: "Settings"
+
+# The Account section is on Settings.
+- assertVisible: "Account"
+
+- tapOn: "Sign in"
+- inputText: "${TEST_LOGIN_EMAIL}"
+- tapOn:
+    text: "Password"
+    optional: true
+- inputText: "${TEST_LOGIN_PASSWORD}"
+- tapOn: "Sign in"
+
+# Wait for the API round-trip — sign-in usually returns in under 5 s.
+- extendedWaitUntil:
+    visible: "Sign out"
+    timeout: 15000
+
+# Delete-account button must be visible once signed in (App Store /
+# Play Console compliance requirement).
+- assertVisible: "Delete account"

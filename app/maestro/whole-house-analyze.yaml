@@ -1,0 +1,46 @@
+# Golden path: Whole House Advice. User opens the screen, supplies a budget +
+# vision text, fires the analyze call, lands on the WholeHouseResult screen.
+#
+# Photo upload is intentionally skipped — emulator camera permissions are
+# painful to automate. The backend tolerates a request without photos
+# (it falls back to text-only suggestions) so this flow still exercises the
+# full network round-trip + result render.
+#
+# Network-dependent. Runs in the golden-path branch of e2e-maestro.yml only.
+appId: com.landscapehelper
+---
+- launchApp:
+    clearState: true
+- assertVisible:
+    text: "Landscape Helper"
+    optional: true
+
+# Drawer -> New Project -> WholeHouse (from the capture screen).
+- swipe:
+    from: { x: 2%, y: 50% }
+    to: { x: 80%, y: 50% }
+- tapOn: "New Project"
+
+# The Capture screen has a "Whole House Advice" entry button.
+- tapOn:
+    text: "Whole House"
+    optional: true
+
+- tapOn:
+    id: "whole-house-budget-input"
+    optional: true
+- inputText: "$1500"
+
+- tapOn:
+    id: "whole-house-ideas-input"
+    optional: true
+- inputText: "Front yard refresh: low-maintenance shrubs and a small bed by the mailbox."
+
+- tapOn: "Get advice"
+
+# Wait up to 120 s — multi-side analysis on the backend can be slow.
+- extendedWaitUntil:
+    visible: "House Suggestions"
+    timeout: 120000
+
+- assertNotVisible: "Something went wrong"

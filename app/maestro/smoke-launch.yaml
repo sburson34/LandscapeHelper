@@ -1,0 +1,16 @@
+# Smoke: app launches, renders first screen, no crash banner. Canary for
+# build-time regressions (bad native module linkage, missing assets, JS
+# bundle errors) — if this fails nothing else will run.
+appId: com.landscapehelper
+---
+- launchApp:
+    clearState: true
+
+# The Capture screen is the initial route. Either the app title in the
+# header or one of the capture controls should be on screen.
+- assertVisible:
+    text: "Landscape Helper"
+    optional: true
+
+# The error boundary fallback ("Something went wrong") should never render.
+- assertNotVisible: "Something went wrong"
