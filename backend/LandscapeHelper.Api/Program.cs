@@ -234,37 +234,75 @@ using (var scope = app.Services.CreateScope())
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     db.Database.EnsureCreated();
 
-    // Idempotent additive schema for existing databases
-    db.Database.ExecuteSqlRaw(@"
-        CREATE TABLE IF NOT EXISTS Users (
-            Id INTEGER PRIMARY KEY AUTOINCREMENT,
-            Email TEXT NOT NULL,
-            PasswordHash TEXT NOT NULL,
-            DisplayName TEXT NULL,
-            CreatedAt TEXT NOT NULL
-        );
-        CREATE UNIQUE INDEX IF NOT EXISTS IX_Users_Email ON Users(Email);
+    // Idempotent additive schema for existing databases. Provider-specific
+    // because we use SQLite locally and Postgres on the shared host, and the
+    // two dialects disagree on AUTOINCREMENT vs SERIAL.
+    if (dbProvider == "postgresql")
+    {
+        db.Database.ExecuteSqlRaw(@"
+            CREATE TABLE IF NOT EXISTS ""Users"" (
+                ""Id"" SERIAL PRIMARY KEY,
+                ""Email"" TEXT NOT NULL,
+                ""PasswordHash"" TEXT NOT NULL,
+                ""DisplayName"" TEXT NULL,
+                ""CreatedAt"" TEXT NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS ""IX_Users_Email"" ON ""Users""(""Email"");
 
-        CREATE TABLE IF NOT EXISTS HouseAdviceSessions (
-            Id INTEGER PRIMARY KEY AUTOINCREMENT,
-            UserId INTEGER NOT NULL,
-            CreatedAt TEXT NOT NULL,
-            Budget TEXT NULL,
-            Ideas TEXT NULL,
-            OverallNotes TEXT NULL,
-            SuggestionsJson TEXT NOT NULL,
-            FOREIGN KEY (UserId) REFERENCES Users(Id) ON DELETE CASCADE
-        );
+            CREATE TABLE IF NOT EXISTS ""HouseAdviceSessions"" (
+                ""Id"" SERIAL PRIMARY KEY,
+                ""UserId"" INTEGER NOT NULL,
+                ""CreatedAt"" TEXT NOT NULL,
+                ""Budget"" TEXT NULL,
+                ""Ideas"" TEXT NULL,
+                ""OverallNotes"" TEXT NULL,
+                ""SuggestionsJson"" TEXT NOT NULL,
+                FOREIGN KEY (""UserId"") REFERENCES ""Users""(""Id"") ON DELETE CASCADE
+            );
 
-        CREATE TABLE IF NOT EXISTS HouseAdvicePhotos (
-            Id INTEGER PRIMARY KEY AUTOINCREMENT,
-            SessionId INTEGER NOT NULL,
-            Side TEXT NOT NULL,
-            Base64 TEXT NOT NULL,
-            MimeType TEXT NOT NULL,
-            FOREIGN KEY (SessionId) REFERENCES HouseAdviceSessions(Id) ON DELETE CASCADE
-        );
-    ");
+            CREATE TABLE IF NOT EXISTS ""HouseAdvicePhotos"" (
+                ""Id"" SERIAL PRIMARY KEY,
+                ""SessionId"" INTEGER NOT NULL,
+                ""Side"" TEXT NOT NULL,
+                ""Base64"" TEXT NOT NULL,
+                ""MimeType"" TEXT NOT NULL,
+                FOREIGN KEY (""SessionId"") REFERENCES ""HouseAdviceSessions""(""Id"") ON DELETE CASCADE
+            );
+        ");
+    }
+    else
+    {
+        db.Database.ExecuteSqlRaw(@"
+            CREATE TABLE IF NOT EXISTS Users (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                Email TEXT NOT NULL,
+                PasswordHash TEXT NOT NULL,
+                DisplayName TEXT NULL,
+                CreatedAt TEXT NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS IX_Users_Email ON Users(Email);
+
+            CREATE TABLE IF NOT EXISTS HouseAdviceSessions (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                UserId INTEGER NOT NULL,
+                CreatedAt TEXT NOT NULL,
+                Budget TEXT NULL,
+                Ideas TEXT NULL,
+                OverallNotes TEXT NULL,
+                SuggestionsJson TEXT NOT NULL,
+                FOREIGN KEY (UserId) REFERENCES Users(Id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS HouseAdvicePhotos (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                SessionId INTEGER NOT NULL,
+                Side TEXT NOT NULL,
+                Base64 TEXT NOT NULL,
+                MimeType TEXT NOT NULL,
+                FOREIGN KEY (SessionId) REFERENCES HouseAdviceSessions(Id) ON DELETE CASCADE
+            );
+        ");
+    }
 }
 
 // Configure the HTTP request pipeline.
