@@ -15,6 +15,7 @@ using System.ClientModel.Primitives;
 using Amazon.SecretsManager;
 using Amazon.SecretsManager.Model;
 using LandscapeHelper.Api.Data;
+using LandscapeHelper.Api.Integrations;
 using LandscapeHelper.Api.Middleware;
 using LandscapeHelper.Api.Models;
 using LandscapeHelper.Api.Observability;
@@ -157,6 +158,11 @@ builder.Services
         };
     });
 builder.Services.AddAuthorization();
+
+// Feature flags — read once at startup from env vars; the mobile app pulls
+// the current set via GET /api/features at boot to gate scaffolded screens
+// behind a server flip.
+builder.Services.AddSingleton<FeatureFlags>();
 
 var app = builder.Build();
 
@@ -378,6 +384,9 @@ app.MapControllers();
 
 // Health check — used by Docker healthcheck + Caddy upstream probe.
 app.MapGet("/healthz", () => Results.Ok());
+
+// Feature flag snapshot, read at app-boot by the mobile client.
+app.MapGet("/api/features", (FeatureFlags flags) => Results.Ok(flags.ToPublicJson()));
 
 app.MapGet("/", () => "LandscapeHelper API is running on " + DateTime.Now);
 
