@@ -15,6 +15,7 @@ using System.ClientModel.Primitives;
 using Amazon.SecretsManager;
 using Amazon.SecretsManager.Model;
 using LandscapeHelper.Api.Data;
+using LandscapeHelper.Api.Middleware;
 using LandscapeHelper.Api.Models;
 using LandscapeHelper.Api.Observability;
 
@@ -358,6 +359,15 @@ if (app.Environment.IsDevelopment())
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
+
+// ── Middleware trio (correlation id -> exception handler -> request log) ──
+// Order matters: CorrelationId runs first so the ID is in scope for both the
+// exception handler's log line and the request logger's structured fields.
+// ExceptionHandler wraps RequestLogging so unhandled throws still produce
+// a clean JSON response (the logger fires from `finally`, so it always runs).
+app.UseMiddleware<CorrelationIdMiddleware>();
+app.UseMiddleware<ExceptionHandlerMiddleware>();
+app.UseMiddleware<RequestLoggingMiddleware>();
 
 app.UseCors("MobilePolicy");
 
