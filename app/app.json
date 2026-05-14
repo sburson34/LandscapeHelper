@@ -30,7 +30,8 @@
         {
           "locationAlwaysAndWhenInUsePermission": "Landscape Helper uses your location to tailor shrub and landscaping advice to your local climate and upcoming weather."
         }
-      ]
+      ],
+      "./plugins/with-privacy-manifest"
     ]
   }
 }
