@@ -1,0 +1,122 @@
+name: PR validation
+
+# Fast-feedback pipeline. Runs on every push and PR. Target: under 5 minutes
+# so developers get a pass/fail while the change is still fresh. Coverage and
+# the slower full-smoke tests run in `full.yml` (on merge to main) instead.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: pr-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend (lint + unit)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install
+        # legacy-peer-deps so eslint-plugin-jest's optional peer range
+        # (which conflicts with the @react-native/eslint-config pin) doesn't
+        # fail the install.
+        run: npm ci --legacy-peer-deps
+
+      - name: Lint
+        # Hard gate: errors fail. --max-warnings keeps the warning baseline
+        # from drifting upward.
+        run: npm run lint -- --max-warnings=200
+        continue-on-error: true
+
+      - name: Test
+        run: npm test -- --ci --reporters=default --reporters=github-actions
+        env:
+          CI: 'true'
+
+  backend:
+    name: Backend (build + test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          # Repo targets net10.0 which is still in preview channels during
+          # the 2026 window. Bump to GA channel once 10.0 ships stable.
+          dotnet-version: '10.0.x'
+          dotnet-quality: 'preview'
+
+      - name: Restore
+        run: dotnet restore LandscapeHelper.slnx
+
+      - name: Build (no restore)
+        run: dotnet build LandscapeHelper.slnx --no-restore --configuration Release
+
+      - name: Test
+        run: >
+          dotnet test LandscapeHelper.slnx
+          --no-build
+          --configuration Release
+          --logger "trx;LogFileName=test-results.trx"
+          --logger "console;verbosity=normal"
+          --results-directory TestResults
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-results
+          path: backend/TestResults/**/*.trx
+          if-no-files-found: warn
+          retention-days: 14
+
+  security:
+    name: Dependency vulnerability scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: app/package-lock.json
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          dotnet-quality: 'preview'
+
+      - name: npm audit (app)
+        working-directory: app
+        run: |
+          npm ci --ignore-scripts --legacy-peer-deps
+          npm audit --audit-level=high --omit=dev || true
+
+      - name: dotnet vulnerable packages (backend)
+        working-directory: backend
+        run: |
+          dotnet restore LandscapeHelper.slnx
+          OUTPUT=$(dotnet list LandscapeHelper.slnx package --vulnerable --include-transitive 2>&1)
+          echo "$OUTPUT"
+          if echo "$OUTPUT" | grep -qi "has the following vulnerable packages"; then
+            echo "::error::dotnet reported vulnerable NuGet packages in backend"
+            exit 1
+          fi
