@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="LandscapeHelper.Api/LandscapeHelper.Api.csproj" />
+  <Project Path="LandscapeHelper.Tests/LandscapeHelper.Tests.csproj" />
+</Solution>

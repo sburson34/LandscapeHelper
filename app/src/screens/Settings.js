@@ -14,7 +14,7 @@ import { GOOGLE_LANGUAGES } from '../i18n/googleLanguages';
 import { useAppTheme } from '../ThemeContext';
 import theme from '../theme';
 
-export default function Settings() {
+export default function Settings({ navigation }) {
   const { t, language, setLanguage, isTranslating, translationError } = useTranslation();
   const { isDark, toggleDark } = useAppTheme();
   const [langPickerOpen, setLangPickerOpen] = useState(false);
@@ -233,6 +233,17 @@ export default function Settings() {
                 </Text>
                 <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
                   <Text style={styles.signOutText}>Sign out</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.deleteAccountButton}
+                  onPress={() => {
+                    if (!navigation) return;
+                    // DeleteAccount lives inside the CaptureStack so we hop
+                    // through the NewProject drawer route to reach it.
+                    navigation.navigate('NewProject', { screen: 'DeleteAccount' });
+                  }}
+                >
+                  <Text style={styles.deleteAccountText}>Delete account</Text>
                 </TouchableOpacity>
               </>
             ) : (
@@ -552,5 +563,12 @@ const styles = StyleSheet.create({
     alignItems: 'center', marginTop: 12,
   },
   signOutText: { color: theme.colors.textSecondary, fontWeight: '700' },
+  deleteAccountButton: {
+    backgroundColor: theme.colors.background,
+    borderWidth: 1, borderColor: '#DC2626',
+    padding: 12, borderRadius: theme.roundness.medium,
+    alignItems: 'center', marginTop: 8,
+  },
+  deleteAccountText: { color: '#DC2626', fontWeight: '700' },
   disabledButton: { opacity: 0.6 },
 });

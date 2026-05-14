@@ -11,6 +11,7 @@ public class AppDbContext : DbContext
     public DbSet<User> Users => Set<User>();
     public DbSet<HouseAdviceSession> HouseAdviceSessions => Set<HouseAdviceSession>();
     public DbSet<HouseAdvicePhoto> HouseAdvicePhotos => Set<HouseAdvicePhoto>();
+    public DbSet<DataDeletionRequest> DataDeletionRequests => Set<DataDeletionRequest>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

@@ -201,6 +201,40 @@ const getMe = async () => {
   return res.json();
 };
 
+// ── account deletion (privacy / app-store compliance) ─────────────
+// POSTs to /api/account/delete. The server stores a pending_verification row
+// and the actual data wipe is done out-of-band within 30 days.
+const requestAccountDeletion = async ({ name, email, phone, token }) => {
+  const url = `${BASE_URL}/api/account/delete`;
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ name, email, phone }),
+  });
+  if (!response.ok) {
+    let errorData = {};
+    try { errorData = await response.json(); } catch {}
+    throw new Error(errorData.error || `Deletion request failed: ${response.status}`);
+  }
+  return response.json();
+};
+
+// ── feature flags (GET /api/features) ─────────────────────────────
+// Used by app/src/config/features.js. Defensive fetch — returns {} on
+// network/parse failures so the default flag set is preserved.
+const getFeatures = async () => {
+  const url = `${BASE_URL}/api/features`;
+  try {
+    const response = await fetch(url, { method: 'GET' });
+    if (!response.ok) return {};
+    return await response.json();
+  } catch {
+    return {};
+  }
+};
+
 // ── translate strings via backend proxy (Google Translate v2) ─────
 const translateStrings = async (texts, target, source = 'en') => {
   const url = `${BASE_URL}/api/translate`;
@@ -236,4 +270,6 @@ export {
   register,
   login,
   getMe,
+  requestAccountDeletion,
+  getFeatures,
 };

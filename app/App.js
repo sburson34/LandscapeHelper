@@ -23,6 +23,7 @@ import Shrubbery from './src/screens/ShrubberyScreen';
 import ShrubberyResult from './src/screens/ShrubberyResultScreen';
 import Quotes from './src/screens/Quotes';
 import Community from './src/screens/Community';
+import DeleteAccount from './src/screens/DeleteAccountScreen';
 import theme from './src/theme';
 import { I18nProvider, useTranslation } from './src/i18n/I18nContext';
 import { ThemeProvider } from './src/ThemeContext';
@@ -162,6 +163,11 @@ function CaptureStack() {
         name="ShrubberyResult"
         component={ShrubberyResult}
         options={{ title: 'Shrub Recommendations' }}
+      />
+      <Stack.Screen
+        name="DeleteAccount"
+        component={DeleteAccount}
+        options={{ title: 'Delete Account' }}
       />
     </Stack.Navigator>
   );

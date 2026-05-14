@@ -24,4 +24,8 @@
     <Content Include=".ebextensions\**" CopyToPublishDirectory="Always" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="LandscapeHelper.Tests" />
+  </ItemGroup>
+
 </Project>

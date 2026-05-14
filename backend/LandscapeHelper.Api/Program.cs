@@ -268,6 +268,26 @@ using (var scope = app.Services.CreateScope())
                 ""MimeType"" TEXT NOT NULL,
                 FOREIGN KEY (""SessionId"") REFERENCES ""HouseAdviceSessions""(""Id"") ON DELETE CASCADE
             );
+
+            CREATE TABLE IF NOT EXISTS ""DataDeletionRequests"" (
+                ""Id"" SERIAL PRIMARY KEY,
+                ""RequestId"" TEXT NOT NULL,
+                ""Name"" TEXT NULL,
+                ""Email"" TEXT NULL,
+                ""Phone"" TEXT NULL,
+                ""UserId"" INTEGER NULL,
+                ""Status"" TEXT NOT NULL DEFAULT 'pending_verification',
+                ""CreatedAt"" TEXT NOT NULL,
+                ""VerifiedAt"" TEXT NULL,
+                ""CompletedAt"" TEXT NULL,
+                ""Notes"" TEXT NULL,
+                ""ClientIp"" TEXT NULL,
+                ""CorrelationId"" TEXT NULL,
+                ""AppVersion"" TEXT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS ""IX_DataDeletionRequests_RequestId"" ON ""DataDeletionRequests""(""RequestId"");
+            CREATE INDEX IF NOT EXISTS ""IX_DataDeletionRequests_Email"" ON ""DataDeletionRequests""(""Email"");
+            CREATE INDEX IF NOT EXISTS ""IX_DataDeletionRequests_UserId"" ON ""DataDeletionRequests""(""UserId"");
         ");
     }
     else
@@ -301,6 +321,26 @@ using (var scope = app.Services.CreateScope())
                 MimeType TEXT NOT NULL,
                 FOREIGN KEY (SessionId) REFERENCES HouseAdviceSessions(Id) ON DELETE CASCADE
             );
+
+            CREATE TABLE IF NOT EXISTS DataDeletionRequests (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                RequestId TEXT NOT NULL,
+                Name TEXT NULL,
+                Email TEXT NULL,
+                Phone TEXT NULL,
+                UserId INTEGER NULL,
+                Status TEXT NOT NULL DEFAULT 'pending_verification',
+                CreatedAt TEXT NOT NULL,
+                VerifiedAt TEXT NULL,
+                CompletedAt TEXT NULL,
+                Notes TEXT NULL,
+                ClientIp TEXT NULL,
+                CorrelationId TEXT NULL,
+                AppVersion TEXT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS IX_DataDeletionRequests_RequestId ON DataDeletionRequests(RequestId);
+            CREATE INDEX IF NOT EXISTS IX_DataDeletionRequests_Email ON DataDeletionRequests(Email);
+            CREATE INDEX IF NOT EXISTS IX_DataDeletionRequests_UserId ON DataDeletionRequests(UserId);
         ");
     }
 }
@@ -325,6 +365,86 @@ app.MapControllers();
 app.MapGet("/healthz", () => Results.Ok());
 
 app.MapGet("/", () => "LandscapeHelper API is running on " + DateTime.Now);
+
+// ── App-store / privacy-policy data deletion ─────────────────────────────────
+// Required for App Store / Play Console compliance. The mobile app POSTs here
+// when a user taps "Delete account" in Settings. We persist a row in
+// DataDeletionRequests; the actual wipe (HelpRequests, HouseAdviceSessions,
+// HouseAdvicePhotos, Users row, stored media, backups) is performed out-of-band
+// after the contact on file confirms the request. See docs/backend-deletion-endpoint.md.
+//
+// The response is identical whether the email matched an account or not so this
+// endpoint cannot be used as an existence oracle. We still enforce a per-IP cap
+// to prevent abuse.
+app.MapPost("/api/account/delete", async (
+    [FromBody] DeleteAccountDto dto,
+    HttpContext context,
+    AppDbContext db,
+    ILogger<Program> logger) =>
+{
+    var name = (dto?.Name ?? "").Trim();
+    var email = (dto?.Email ?? "").Trim().ToLowerInvariant();
+    var phone = (dto?.Phone ?? "").Trim();
+
+    if (string.IsNullOrEmpty(email) && string.IsNullOrEmpty(phone))
+        return Results.Json(new { error = "email or phone required" }, statusCode: 400);
+
+    var correlationId = context.Items["CorrelationId"] as string ?? Guid.NewGuid().ToString("N").Substring(0, 12);
+    var appVersion = context.Request.Headers["X-App-Version"].ToString();
+    var clientIp = context.Request.Headers["X-Forwarded-For"].FirstOrDefault()?.Split(',').FirstOrDefault()?.Trim()
+                   ?? context.Connection.RemoteIpAddress?.ToString();
+
+    // If the request came from a signed-in user, capture the FK so the wipe
+    // job can scope per-user data without relying on email matches alone.
+    int? authedUserId = null;
+    var sub = context.User?.FindFirst(JwtRegisteredClaimNames.Sub)?.Value
+              ?? context.User?.FindFirst("sub")?.Value;
+    if (int.TryParse(sub, out var parsedId)) authedUserId = parsedId;
+
+    // Per-IP cap so a hostile actor cannot flood the table.
+    const int PerIpPerDay = 20;
+    var since = DateTime.UtcNow.AddHours(-24);
+    int ipCount = 0;
+    if (!string.IsNullOrEmpty(clientIp))
+        ipCount = await db.DataDeletionRequests.CountAsync(r => r.ClientIp == clientIp && r.CreatedAt >= since);
+
+    var fakeRequestId = Guid.NewGuid().ToString();
+    if (ipCount >= PerIpPerDay)
+    {
+        logger.LogWarning("account/delete: per-IP cap hit. ip={Ip} correlationId={CorrelationId}", clientIp, correlationId);
+        return Results.Ok(new { status = "pending_verification", requestId = fakeRequestId });
+    }
+
+    var record = new DataDeletionRequest
+    {
+        RequestId = Guid.NewGuid().ToString(),
+        Name = string.IsNullOrEmpty(name) ? null : name,
+        Email = string.IsNullOrEmpty(email) ? null : email,
+        Phone = string.IsNullOrEmpty(phone) ? null : phone,
+        UserId = authedUserId,
+        Status = "pending_verification",
+        CreatedAt = DateTime.UtcNow,
+        ClientIp = clientIp,
+        CorrelationId = correlationId,
+        AppVersion = string.IsNullOrEmpty(appVersion) ? null : appVersion,
+    };
+    db.DataDeletionRequests.Add(record);
+    await db.SaveChangesAsync();
+
+    logger.LogInformation(
+        "account/delete: queued. requestId={RequestId} emailHash={EmailHash} userId={UserId} correlationId={CorrelationId}",
+        record.RequestId, HashEmail(email), authedUserId, correlationId);
+
+    return Results.Ok(new { status = "pending_verification", requestId = record.RequestId });
+
+    static string HashEmail(string? s)
+    {
+        if (string.IsNullOrEmpty(s)) return "";
+        using var sha = System.Security.Cryptography.SHA256.Create();
+        var bytes = sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(s));
+        return Convert.ToHexString(bytes).Substring(0, 12).ToLowerInvariant();
+    }
+});
 
 // In-memory community projects store (#18). Replace with DB once schema is settled.
 var communityProjects = new List<CommunityProjectDto>();
@@ -1849,6 +1969,12 @@ public record AuthRequest(
     [property: JsonPropertyName("email")] string Email,
     [property: JsonPropertyName("password")] string Password,
     [property: JsonPropertyName("displayName")] string? DisplayName
+);
+
+public record DeleteAccountDto(
+    [property: JsonPropertyName("name")] string? Name,
+    [property: JsonPropertyName("email")] string? Email,
+    [property: JsonPropertyName("phone")] string? Phone
 );
 
 public record TranslateRequest(
