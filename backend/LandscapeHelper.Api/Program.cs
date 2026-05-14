@@ -36,9 +36,19 @@ builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(optio
     options.MultipartBodyLengthLimit = 50 * 1024 * 1024;
 });
 
-// Add SQLite database
+// Database — SQLite for local dev, PostgreSQL on the shared host.
+// Configured via env: ConnectionStrings__Default + Database__Provider.
+var connectionString = builder.Configuration.GetConnectionString("Default")
+    ?? "Data Source=helpRequests.db";
+var dbProvider = builder.Configuration["Database:Provider"]?.ToLower() ?? "sqlite";
+
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlite("Data Source=helpRequests.db"));
+{
+    if (dbProvider == "postgresql")
+        options.UseNpgsql(connectionString);
+    else
+        options.UseSqlite(connectionString);
+});
 
 // Add CORS
 builder.Services.AddCors(options =>
@@ -272,6 +282,9 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+
+// Health check — used by Docker healthcheck + Caddy upstream probe.
+app.MapGet("/healthz", () => Results.Ok());
 
 app.MapGet("/", () => "LandscapeHelper API is running on " + DateTime.Now);
 
