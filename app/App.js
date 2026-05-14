@@ -2,6 +2,12 @@ import React from 'react';
 import { View, Image, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { NavigationContainer, DefaultTheme, DrawerActions } from '@react-navigation/native';
+import { initSentry, navigationIntegration } from './src/services/sentry';
+
+// Initialise Sentry as the very first thing on import so native crashes and
+// any throw during provider setup are captured. initSentry is a no-op when no
+// DSN is configured, so this is safe to leave in for dev builds too.
+initSentry();
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createDrawerNavigator } from '@react-navigation/drawer';
 import { Ionicons as Icon } from '@expo/vector-icons';
@@ -173,10 +179,21 @@ function CaptureStack() {
   );
 }
 
+// Mutable ref so Sentry's nav integration can subscribe once the container is
+// mounted. Declared at module scope (not via useRef) because the integration
+// API expects a plain object reference, not a hook.
+let navigationRef = null;
+
 function AppContent() {
   const { t } = useTranslation();
   return (
-    <NavigationContainer theme={MyTheme}>
+    <NavigationContainer
+      theme={MyTheme}
+      onReady={() => {
+        try { navigationIntegration?.registerNavigationContainer?.(navigationRef); } catch {}
+      }}
+      ref={(ref) => { navigationRef = ref; }}
+    >
       <Drawer.Navigator
         initialRouteName="NewProject"
         screenOptions={{

@@ -16,8 +16,13 @@ using Amazon.SecretsManager;
 using Amazon.SecretsManager.Model;
 using LandscapeHelper.Api.Data;
 using LandscapeHelper.Api.Models;
+using LandscapeHelper.Api.Observability;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Sentry: reads the DSN from the Sentry__Dsn env var. Safe to call when not
+// configured (no-op when DSN is empty). See Observability/SentrySetup.cs.
+builder.WebHost.UseLandscapeHelperSentry();
 
 // Add services to the container.
 builder.Services.AddControllers();

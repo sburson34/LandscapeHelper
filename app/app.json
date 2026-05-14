@@ -5,6 +5,9 @@
     "name": "Landscape Helper",
     "slug": "landscape-helper",
     "version": "1.0.0",
+    "extra": {
+      "sentryDsn": "https://a09c3051dd18ff07932f8d747a4ba32d@o4511185009049600.ingest.us.sentry.io/4511388150005760"
+    },
     "assetBundlePatterns": [
       "**/*"
     ],
