@@ -6,7 +6,10 @@
     "slug": "landscape-helper",
     "version": "1.0.0",
     "extra": {
-      "sentryDsn": "https://a09c3051dd18ff07932f8d747a4ba32d@o4511185009049600.ingest.us.sentry.io/4511388150005760"
+      "sentryDsn": "https://a09c3051dd18ff07932f8d747a4ba32d@o4511185009049600.ingest.us.sentry.io/4511388150005760",
+      "eas": {
+        "projectId": "373a23de-fa5f-4d52-84e6-7d23f8595a42"
+      }
     },
     "assetBundlePatterns": [
       "**/*"
@@ -15,13 +18,21 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.landscapehelper",
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "Landscape Helper uses your location to tailor shrub and landscaping advice to your local climate and upcoming weather."
+        "NSLocationWhenInUseUsageDescription": "Landscape Helper uses your location to tailor shrub and landscaping advice to your local climate and upcoming weather.",
+        "NSSpeechRecognitionUsageDescription": "Allow $(PRODUCT_NAME) to use speech recognition.",
+        "NSMicrophoneUsageDescription": "Allow $(PRODUCT_NAME) to use the microphone."
       }
     },
     "android": {
       "package": "com.landscapehelper",
       "permissions": [
-        "ACCESS_COARSE_LOCATION"
+        "ACCESS_COARSE_LOCATION",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
       ]
     },
     "plugins": [
@@ -35,6 +46,7 @@
         }
       ],
       "./plugins/with-privacy-manifest"
-    ]
+    ],
+    "owner": "sburson34"
   }
 }
