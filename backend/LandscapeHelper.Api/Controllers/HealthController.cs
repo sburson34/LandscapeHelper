@@ -11,13 +11,4 @@ public class HealthController : ControllerBase
     {
         return Ok("API Running");
     }
-
-    [HttpPost("test-security")]
-    public IActionResult TestSecurity([FromHeader(Name = "x-api-key")] string apiKey)
-    {
-        if (apiKey != "YOUR_SECRET_KEY")
-            return Unauthorized();
-
-        return Ok("Security check passed");
-    }
 }
