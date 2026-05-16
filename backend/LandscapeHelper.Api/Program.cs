@@ -712,15 +712,12 @@ IMPORTANT for youtube_links:
     }
     catch (Exception ex)
     {
-        logger.LogError(ex, "Error during DIY analysis. Exception: {Message}. StackTrace: {StackTrace}", ex.Message, ex.StackTrace);
+        logger.LogError(ex, "Error during analysis.");
 
-        // Detailed error for common OpenAI failures
         if (ex.Message.Contains("400") || ex.Message.Contains("content_filter") || ex.Message.Contains("limit"))
-        {
-             return Results.Json(new { error = $"OpenAI API Error: {ex.Message}", details = ex.ToString() }, statusCode: 400);
-        }
+            return Results.Json(new { error = $"OpenAI API Error: {ex.Message}" }, statusCode: 400);
 
-        return Results.Json(new { error = ex.Message, stackTrace = ex.StackTrace, innerException = ex.InnerException?.Message }, statusCode: 500);
+        return Results.Json(new { error = ex.Message }, statusCode: 500);
     }
 });
 
@@ -785,7 +782,7 @@ app.MapPost("/api/help-requests", async ([FromBody] CreateHelpRequestDto dto, Ap
 // IResult to short-circuit when the request is not from an admin.
 IResult? RequireAdmin(HttpContext http)
 {
-    if (!http.User.Identity?.IsAuthenticated == true) return Results.Unauthorized();
+    if (http.User.Identity?.IsAuthenticated != true) return Results.Unauthorized();
     if (http.User.FindFirst("isAdmin")?.Value != "true") return Results.Forbid();
     return null;
 }
