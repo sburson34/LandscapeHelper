@@ -69,29 +69,45 @@ builder.Services.AddCors(options =>
         });
 });
 
+// Lazily fetch + cache the JSON-wrapped secret payload from AWS Secrets Manager.
+// SECRET_ARN is set on the shared host; absent locally so we just fall back
+// to env vars. Returns null if SECRET_ARN is unset or the fetch fails.
+JsonElement? cachedSecret = null;
+bool secretFetched = false;
+JsonElement? GetSecretJson()
+{
+    if (secretFetched) return cachedSecret;
+    secretFetched = true;
+    var secretArn = Environment.GetEnvironmentVariable("SECRET_ARN");
+    if (string.IsNullOrEmpty(secretArn)) return null;
+    try
+    {
+        using var smClient = new AmazonSecretsManagerClient(Amazon.RegionEndpoint.USEast1);
+        var resp = smClient.GetSecretValueAsync(new GetSecretValueRequest { SecretId = secretArn }).GetAwaiter().GetResult();
+        try
+        {
+            cachedSecret = JsonSerializer.Deserialize<JsonElement>(resp.SecretString);
+        }
+        catch (JsonException) { }
+    }
+    catch { }
+    return cachedSecret;
+}
+
+string? ReadSecretKey(string key)
+{
+    var json = GetSecretJson();
+    if (json is JsonElement el && el.TryGetProperty(key, out var prop))
+        return prop.GetString();
+    return null;
+}
+
 // JWT signing key. In prod we read from Secrets Manager (key JWT_SIGNING_KEY).
 // In dev, fall back to env var or generate an ephemeral one (sessions reset on restart).
 string jwtSigningKey;
 {
-    string? key = null;
-    string? secretArn = Environment.GetEnvironmentVariable("SECRET_ARN");
-    if (!string.IsNullOrEmpty(secretArn))
-    {
-        try
-        {
-            using var smClient = new AmazonSecretsManagerClient(Amazon.RegionEndpoint.USEast1);
-            var resp = smClient.GetSecretValueAsync(new GetSecretValueRequest { SecretId = secretArn }).GetAwaiter().GetResult();
-            try
-            {
-                var parsed = JsonSerializer.Deserialize<JsonElement>(resp.SecretString);
-                if (parsed.TryGetProperty("JWT_SIGNING_KEY", out var k))
-                    key = k.GetString();
-            }
-            catch (JsonException) { }
-        }
-        catch { }
-    }
-    key ??= Environment.GetEnvironmentVariable("JWT_SIGNING_KEY");
+    var key = ReadSecretKey("JWT_SIGNING_KEY")
+              ?? Environment.GetEnvironmentVariable("JWT_SIGNING_KEY");
     if (string.IsNullOrEmpty(key))
     {
         // Generate ephemeral key — only acceptable in dev. Tokens won't survive restart.
@@ -110,25 +126,8 @@ var jwtKeyBytes = System.Text.Encoding.UTF8.GetBytes(jwtSigningKey);
 // or from the ADMIN_EMAILS env var. Comma-separated, case-insensitive.
 HashSet<string> adminEmails;
 {
-    string? emailsRaw = null;
-    string? secretArn = Environment.GetEnvironmentVariable("SECRET_ARN");
-    if (!string.IsNullOrEmpty(secretArn))
-    {
-        try
-        {
-            using var smClient = new AmazonSecretsManagerClient(Amazon.RegionEndpoint.USEast1);
-            var resp = smClient.GetSecretValueAsync(new GetSecretValueRequest { SecretId = secretArn }).GetAwaiter().GetResult();
-            try
-            {
-                var parsed = JsonSerializer.Deserialize<JsonElement>(resp.SecretString);
-                if (parsed.TryGetProperty("ADMIN_EMAILS", out var e))
-                    emailsRaw = e.GetString();
-            }
-            catch (JsonException) { }
-        }
-        catch { }
-    }
-    emailsRaw ??= Environment.GetEnvironmentVariable("ADMIN_EMAILS");
+    var emailsRaw = ReadSecretKey("ADMIN_EMAILS")
+                    ?? Environment.GetEnvironmentVariable("ADMIN_EMAILS");
     adminEmails = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     if (!string.IsNullOrWhiteSpace(emailsRaw))
     {
@@ -167,34 +166,11 @@ builder.Services.AddSingleton<FeatureFlags>();
 var app = builder.Build();
 
 // Fetch OpenAI API key from AWS Secrets Manager (or fall back to env var for local dev)
-string? openAiKey = null;
+string? openAiKey;
 {
     var startupLogger = app.Services.GetRequiredService<ILogger<Program>>();
-    string? secretArn = Environment.GetEnvironmentVariable("SECRET_ARN");
-    if (!string.IsNullOrEmpty(secretArn))
-    {
-        try
-        {
-            using var smClient = new AmazonSecretsManagerClient(Amazon.RegionEndpoint.USEast1);
-            var response = await smClient.GetSecretValueAsync(new GetSecretValueRequest { SecretId = secretArn });
-            var secretString = response.SecretString;
-            // Handle JSON-wrapped secret: {"OPENAI_API_KEY":"sk-..."}
-            try
-            {
-                var parsed = JsonSerializer.Deserialize<JsonElement>(secretString);
-                if (parsed.TryGetProperty("OPENAI_API_KEY", out var keyProp))
-                    openAiKey = keyProp.GetString();
-            }
-            catch (JsonException) { }
-            openAiKey ??= secretString;
-            startupLogger.LogInformation("OpenAI API key loaded from Secrets Manager.");
-        }
-        catch (Exception ex)
-        {
-            startupLogger.LogError(ex, "Failed to fetch secret from Secrets Manager (ARN: {Arn}).", secretArn);
-        }
-    }
-    openAiKey ??= Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+    openAiKey = ReadSecretKey("OPENAI_API_KEY")
+                ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY");
     if (string.IsNullOrEmpty(openAiKey))
         startupLogger.LogWarning("OPENAI_API_KEY is not configured. Set SECRET_ARN or OPENAI_API_KEY env var.");
     else
@@ -209,34 +185,38 @@ string homeDepotImpactId = Environment.GetEnvironmentVariable("HOMEDEPOT_IMPACT_
 // Google Cloud API key (shared across Google services like Translate, YouTube, etc.).
 // Stored in the same AWS Secrets Manager secret under the key "GOOGLE_API_KEY".
 // Falls back to GOOGLE_API_KEY env var, then GOOGLE_TRANSLATE_API_KEY for back-compat.
-string? googleApiKey = null;
-{
-    string? secretArn = Environment.GetEnvironmentVariable("SECRET_ARN");
-    if (!string.IsNullOrEmpty(secretArn))
-    {
-        try
-        {
-            using var smClient = new AmazonSecretsManagerClient(Amazon.RegionEndpoint.USEast1);
-            var response = await smClient.GetSecretValueAsync(new GetSecretValueRequest { SecretId = secretArn });
-            try
-            {
-                var parsed = JsonSerializer.Deserialize<JsonElement>(response.SecretString);
-                if (parsed.TryGetProperty("GOOGLE_API_KEY", out var keyProp))
-                    googleApiKey = keyProp.GetString();
-                else if (parsed.TryGetProperty("GOOGLE_TRANSLATE_API_KEY", out var legacyProp))
-                    googleApiKey = legacyProp.GetString();
-            }
-            catch (JsonException) { }
-        }
-        catch { }
-    }
-    googleApiKey ??= Environment.GetEnvironmentVariable("GOOGLE_API_KEY");
-    googleApiKey ??= Environment.GetEnvironmentVariable("GOOGLE_TRANSLATE_API_KEY");
-}
+string? googleApiKey = ReadSecretKey("GOOGLE_API_KEY")
+                       ?? ReadSecretKey("GOOGLE_TRANSLATE_API_KEY")
+                       ?? Environment.GetEnvironmentVariable("GOOGLE_API_KEY")
+                       ?? Environment.GetEnvironmentVariable("GOOGLE_TRANSLATE_API_KEY");
 
 // Simple in-memory cache for translations (key: "source|target|text" → translated)
 var translationCache = new System.Collections.Concurrent.ConcurrentDictionary<string, string>();
 var sharedHttpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+
+// Convert a JSON array element of shopping items (each either a plain string or
+// a {item, ...} object) into a list of affiliate-link records the mobile app
+// renders. Used by /api/analyze, /api/house-advice, /api/shrubbery-advice.
+List<object> BuildAffiliateLinks(JsonElement shopEl)
+{
+    var links = new List<object>();
+    if (shopEl.ValueKind != JsonValueKind.Array) return links;
+    foreach (var item in shopEl.EnumerateArray())
+    {
+        string itemName = item.ValueKind == JsonValueKind.String
+            ? item.GetString() ?? ""
+            : item.TryGetProperty("item", out var ip) ? ip.GetString() ?? "" : "";
+        if (string.IsNullOrWhiteSpace(itemName)) continue;
+        var encoded = Uri.EscapeDataString(itemName);
+        links.Add(new
+        {
+            item = itemName,
+            amazon_url = $"https://www.amazon.com/s?k={encoded}&tag={amazonAssociateTag}",
+            homedepot_url = $"https://www.homedepot.com/s/{encoded}?NCNI-5&irclickid={homeDepotImpactId}"
+        });
+    }
+    return links;
+}
 
 // Ensure SQLite database is created. EnsureCreated only creates missing tables
 // when the DB doesn't exist; for existing DBs we issue raw CREATE TABLE IF NOT EXISTS
@@ -669,37 +649,7 @@ IMPORTANT for youtube_links:
 
             if (root.TryGetProperty("shopping_links", out var shoppingEl))
             {
-                var affiliateLinks = new List<object>();
-
-                if (shoppingEl.ValueKind == JsonValueKind.Array)
-                {
-                    foreach (var item in shoppingEl.EnumerateArray())
-                    {
-                        // Handle both string items and {item, url} objects from GPT
-                        string itemName;
-                        if (item.ValueKind == JsonValueKind.String)
-                        {
-                            itemName = item.GetString() ?? "";
-                        }
-                        else if (item.TryGetProperty("item", out var itemProp))
-                        {
-                            itemName = itemProp.GetString() ?? "";
-                        }
-                        else continue;
-
-                        if (string.IsNullOrWhiteSpace(itemName)) continue;
-
-                        var encoded = Uri.EscapeDataString(itemName);
-                        affiliateLinks.Add(new
-                        {
-                            item = itemName,
-                            amazon_url = $"https://www.amazon.com/s?k={encoded}&tag={amazonAssociateTag}",
-                            homedepot_url = $"https://www.homedepot.com/s/{encoded}?NCNI-5&irclickid={homeDepotImpactId}"
-                        });
-                    }
-                }
-
-                resultDict!["shopping_links"] = JsonSerializer.SerializeToElement(affiliateLinks);
+                resultDict!["shopping_links"] = JsonSerializer.SerializeToElement(BuildAffiliateLinks(shoppingEl));
             }
 
             return Results.Ok(resultDict);
@@ -1202,24 +1152,9 @@ IMPORTANT:
                 foreach (var suggestion in suggestionsEl.EnumerateArray())
                 {
                     var sDict = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(suggestion.GetRawText())!;
-                    if (sDict.TryGetValue("shopping_links", out var shopEl) && shopEl.ValueKind == JsonValueKind.Array)
+                    if (sDict.TryGetValue("shopping_links", out var shopEl))
                     {
-                        var affiliateLinks = new List<object>();
-                        foreach (var item in shopEl.EnumerateArray())
-                        {
-                            string itemName = item.ValueKind == JsonValueKind.String
-                                ? item.GetString() ?? ""
-                                : item.TryGetProperty("item", out var ip) ? ip.GetString() ?? "" : "";
-                            if (string.IsNullOrWhiteSpace(itemName)) continue;
-                            var encoded = Uri.EscapeDataString(itemName);
-                            affiliateLinks.Add(new
-                            {
-                                item = itemName,
-                                amazon_url = $"https://www.amazon.com/s?k={encoded}&tag={amazonAssociateTag}",
-                                homedepot_url = $"https://www.homedepot.com/s/{encoded}?NCNI-5&irclickid={homeDepotImpactId}"
-                            });
-                        }
-                        sDict["shopping_links"] = JsonSerializer.SerializeToElement(affiliateLinks);
+                        sDict["shopping_links"] = JsonSerializer.SerializeToElement(BuildAffiliateLinks(shopEl));
                     }
                     var converted = new Dictionary<string, object>();
                     foreach (var kv in sDict) converted[kv.Key] = kv.Value;
@@ -1562,24 +1497,9 @@ IMPORTANT:
                 foreach (var shrub in shrubsEl.EnumerateArray())
                 {
                     var sDict = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(shrub.GetRawText())!;
-                    if (sDict.TryGetValue("shopping_links", out var shopEl) && shopEl.ValueKind == JsonValueKind.Array)
+                    if (sDict.TryGetValue("shopping_links", out var shopEl))
                     {
-                        var affiliateLinks = new List<object>();
-                        foreach (var item in shopEl.EnumerateArray())
-                        {
-                            string itemName = item.ValueKind == JsonValueKind.String
-                                ? item.GetString() ?? ""
-                                : item.TryGetProperty("item", out var ip) ? ip.GetString() ?? "" : "";
-                            if (string.IsNullOrWhiteSpace(itemName)) continue;
-                            var encoded = Uri.EscapeDataString(itemName);
-                            affiliateLinks.Add(new
-                            {
-                                item = itemName,
-                                amazon_url = $"https://www.amazon.com/s?k={encoded}&tag={amazonAssociateTag}",
-                                homedepot_url = $"https://www.homedepot.com/s/{encoded}?NCNI-5&irclickid={homeDepotImpactId}"
-                            });
-                        }
-                        sDict["shopping_links"] = JsonSerializer.SerializeToElement(affiliateLinks);
+                        sDict["shopping_links"] = JsonSerializer.SerializeToElement(BuildAffiliateLinks(shopEl));
                     }
                     var converted = new Dictionary<string, object>();
                     foreach (var kv in sDict) converted[kv.Key] = kv.Value;
