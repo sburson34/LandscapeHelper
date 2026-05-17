@@ -18,6 +18,9 @@ jobs:
   frontend:
     name: Frontend (lint + unit)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
     defaults:
       run:
         working-directory: app
@@ -33,7 +36,12 @@ jobs:
       - name: Install
         # legacy-peer-deps so eslint-plugin-jest's optional peer range
         # (which conflicts with the @react-native/eslint-config pin) doesn't
-        # fail the install.
+        # fail the install. NODE_AUTH_TOKEN is read by app/.npmrc to
+        # authenticate to GHCR for the public @sburson34/mobile-shared
+        # package — GitHub's npm endpoint requires auth even on public
+        # packages.
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm ci --legacy-peer-deps
 
       - name: Lint
@@ -116,6 +124,8 @@ jobs:
 
       - name: npm audit (app)
         working-directory: app
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           npm ci --ignore-scripts --legacy-peer-deps
           npm audit --audit-level=high --omit=dev || true

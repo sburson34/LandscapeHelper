@@ -1,6 +1,8 @@
-// Tests the services/sentry.js scrubbing and helper wrappers. The config
-// module is mocked so the real DSN doesn't have to be present — and so we
-// can flip SENTRY_ENABLED to exercise both branches.
+// Tests the services/sentry.js shim and its wiring into
+// @sburson34/mobile-shared/sentry. The shared package is what calls
+// Sentry.init / Sentry.setTag / Sentry.setContext, so the assertions still
+// target the @sentry/react-native mock — they just flow through the shared
+// module now.
 
 jest.mock('../config/sentry', () => ({
   SENTRY_DSN: 'https://fake@sentry.io/123',
@@ -17,7 +19,7 @@ beforeEach(() => {
 
 const loadSentry = () => {
   // Re-mock dependencies after resetModules so the fresh require picks up our
-  // mocked config and the initialised-once flag is reset.
+  // mocked config and the shared module's once-only initialised flag is reset.
   jest.mock('../config/sentry', () => ({
     SENTRY_DSN: 'https://fake@sentry.io/123',
     SENTRY_ENABLED: true,
@@ -25,13 +27,19 @@ const loadSentry = () => {
     SENTRY_RELEASE: 'landscape-helper@test',
     SENTRY_TRACES_SAMPLE_RATE: 0,
   }));
-  return require('../services/sentry');
+  const mod = require('../services/sentry');
+  // The shared @sburson34/mobile-shared/sentry gates captureException et al.
+  // on its module-level `enabled` flag, which only flips true after
+  // initSentry() runs successfully. Old landscape sentry.js gated on
+  // SENTRY_ENABLED directly, so these tests didn't need to call init first.
+  // Now they do — init here once and let each test exercise its own helper.
+  mod.initSentry();
+  return mod;
 };
 
 describe('initSentry', () => {
   it('calls Sentry.init with the configured DSN + sampling', () => {
-    const { initSentry } = loadSentry();
-    initSentry();
+    loadSentry();
     const SentryMock = require('@sentry/react-native');
     expect(SentryMock.init).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -45,16 +53,14 @@ describe('initSentry', () => {
   });
 
   it('sets app.version and app.platform tags', () => {
-    const { initSentry } = loadSentry();
-    initSentry();
+    loadSentry();
     const SentryMock = require('@sentry/react-native');
     expect(SentryMock.setTag).toHaveBeenCalledWith('app.version', '1.0.0');
     expect(SentryMock.setTag).toHaveBeenCalledWith('app.platform', 'android');
   });
 
   it('sets an "app" context block', () => {
-    const { initSentry } = loadSentry();
-    initSentry();
+    loadSentry();
     const SentryMock = require('@sentry/react-native');
     expect(SentryMock.setContext).toHaveBeenCalledWith(
       'app',
@@ -129,7 +135,7 @@ describe('setAppContext', () => {
 });
 
 describe('SENTRY_ENABLED = false branch', () => {
-  it('captureException falls back to console.error', () => {
+  it('captureException falls back to console.error when init was never called with a DSN', () => {
     jest.resetModules();
     jest.doMock('../config/sentry', () => ({
       SENTRY_DSN: '',
@@ -138,10 +144,13 @@ describe('SENTRY_ENABLED = false branch', () => {
       SENTRY_RELEASE: 'landscape-helper@test',
       SENTRY_TRACES_SAMPLE_RATE: 0,
     }));
-    const { captureException } = require('../services/sentry');
+    const mod = require('../services/sentry');
+    // Init with disabled config so the shared `enabled` flag stays false.
+    mod.initSentry();
     const SentryMock = require('@sentry/react-native');
+    SentryMock.captureException.mockClear();
     const err = new Error('disabled');
-    captureException(err);
+    mod.captureException(err);
     expect(SentryMock.captureException).not.toHaveBeenCalled();
   });
 });
