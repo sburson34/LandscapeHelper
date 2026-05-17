@@ -453,8 +453,11 @@ app.MapPost("/api/account/delete", async (
 // In-memory community projects store (#18). Replace with DB once schema is settled.
 var communityProjects = new List<CommunityProjectDto>();
 
-app.MapPost("/api/analyze", async ([FromBody] AnalyzeProjectRequest request, ILogger<Program> logger) =>
+app.MapPost("/api/analyze", async ([FromBody] AnalyzeProjectRequest request, [FromServices] FeatureFlags flags, ILogger<Program> logger) =>
 {
+    var gate = AiGate(flags);
+    if (gate != null) return gate;
+
     try
     {
         string requestSizeStr = request.Media != null ? $"{request.Media.Length} media items, total base64 chars: {request.Media.Sum(m => (long)(m.Base64?.Length ?? 0))}" : "no media";
@@ -671,8 +674,11 @@ IMPORTANT for youtube_links:
     }
 });
 
-app.MapPost("/api/ask-helper", async ([FromBody] AskHelperRequest request, ILogger<Program> logger) =>
+app.MapPost("/api/ask-helper", async ([FromBody] AskHelperRequest request, [FromServices] FeatureFlags flags, ILogger<Program> logger) =>
 {
+    var gate = AiGate(flags);
+    if (gate != null) return gate;
+
     try
     {
         if (string.IsNullOrEmpty(openAiKey))
@@ -799,8 +805,11 @@ app.MapDelete("/api/help-requests/{id:int}", async (int id, HttpContext http, Ap
 }).RequireAuthorization();
 
 // ── #9 verify-step ─────────────────────────────────────────────────
-app.MapPost("/api/verify-step", async ([FromBody] VerifyStepRequest req, ILogger<Program> logger) =>
+app.MapPost("/api/verify-step", async ([FromBody] VerifyStepRequest req, [FromServices] FeatureFlags flags, ILogger<Program> logger) =>
 {
+    var gate = AiGate(flags);
+    if (gate != null) return gate;
+
     try
     {
         if (string.IsNullOrEmpty(openAiKey))
@@ -858,8 +867,11 @@ Return JSON only:
 });
 
 // ── #10 diagnose ───────────────────────────────────────────────────
-app.MapPost("/api/diagnose", async ([FromBody] AnalyzeProjectRequest req, ILogger<Program> logger) =>
+app.MapPost("/api/diagnose", async ([FromBody] AnalyzeProjectRequest req, [FromServices] FeatureFlags flags, ILogger<Program> logger) =>
 {
+    var gate = AiGate(flags);
+    if (gate != null) return gate;
+
     try
     {
         if (string.IsNullOrEmpty(openAiKey))
@@ -918,8 +930,11 @@ Return JSON only:
 });
 
 // ── #11 clarifying questions ───────────────────────────────────────
-app.MapPost("/api/clarify", async ([FromBody] AnalyzeProjectRequest req, ILogger<Program> logger) =>
+app.MapPost("/api/clarify", async ([FromBody] AnalyzeProjectRequest req, [FromServices] FeatureFlags flags, ILogger<Program> logger) =>
 {
+    var gate = AiGate(flags);
+    if (gate != null) return gate;
+
     try
     {
         if (string.IsNullOrEmpty(openAiKey))
@@ -1009,8 +1024,11 @@ app.MapGet("/api/emergency", () =>
 });
 
 // ── Whole-house advice ────────────────────────────────────────────
-app.MapPost("/api/house-advice", async ([FromBody] WholeHouseRequest req, HttpContext http, AppDbContext db, ILogger<Program> logger) =>
+app.MapPost("/api/house-advice", async ([FromBody] WholeHouseRequest req, HttpContext http, AppDbContext db, [FromServices] FeatureFlags flags, ILogger<Program> logger) =>
 {
+    var gate = AiGate(flags);
+    if (gate != null) return gate;
+
     try
     {
         if (string.IsNullOrEmpty(openAiKey))
@@ -1359,8 +1377,11 @@ static string WeatherCodeToDescription(int code) => code switch
 };
 
 // ── Shrubbery advice ──────────────────────────────────────────────
-app.MapPost("/api/shrubbery-advice", async ([FromBody] ShrubberyRequest req, HttpContext http, ILogger<Program> logger) =>
+app.MapPost("/api/shrubbery-advice", async ([FromBody] ShrubberyRequest req, HttpContext http, [FromServices] FeatureFlags flags, ILogger<Program> logger) =>
 {
+    var gate = AiGate(flags);
+    if (gate != null) return gate;
+
     try
     {
         if (string.IsNullOrEmpty(openAiKey))
@@ -1658,8 +1679,11 @@ app.MapGet("/api/house-advice/{id:int}", async (int id, HttpContext http, AppDbC
 // and OpenAI is used for higher-quality translation of free-form user text.
 var contentTranslationCache = new System.Collections.Concurrent.ConcurrentDictionary<string, string>();
 
-app.MapPost("/api/translate-content", async ([FromBody] TranslateRequest req, ILogger<Program> logger) =>
+app.MapPost("/api/translate-content", async ([FromBody] TranslateRequest req, [FromServices] FeatureFlags flags, ILogger<Program> logger) =>
 {
+    var gate = AiGate(flags);
+    if (gate != null) return gate;
+
     try
     {
         if (req.Q == null || req.Q.Length == 0 || string.IsNullOrWhiteSpace(req.Target))
@@ -1845,6 +1869,21 @@ app.MapPost("/api/translate", async ([FromBody] TranslateRequest req, ILogger<Pr
 });
 
 app.Run();
+
+// AI kill-switch gate — returns a structured 503 IResult when AI traffic
+// should be stopped, otherwise null. Honors the AI_KILL_SWITCH env var
+// (read at startup into FeatureFlags). Documented in
+// ~/WebstormProjects/DIYHelper2/docs/SECURITY_PLAYBOOK.md as a P0
+// incident lever — flip the env var on the shared host and the next
+// request to any AI endpoint short-circuits without redeploy.
+static IResult? AiGate(FeatureFlags flags)
+{
+    if (flags.AiKillSwitch)
+        return Results.Json(
+            new { error = "ai_disabled", code = "ai_kill_switch" },
+            statusCode: 503);
+    return null;
+}
 
 public record VerifyStepRequest(
     [property: JsonPropertyName("stepText")] string StepText,
