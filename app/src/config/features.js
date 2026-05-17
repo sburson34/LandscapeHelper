@@ -1,11 +1,13 @@
-// Feature flags — a tiny context that fetches GET /api/features at mount
-// time and exposes the current flag set + a useFeature hook.
+// Feature flags — defaults below are the safest fallback if the backend is
+// unreachable at boot: core landscaping features ON, social/community paths
+// OFF. The fetcher overrides these once the network response lands.
 //
-// Defaults below are the safest fallback if the backend is unreachable at
-// boot: core landscaping features ON, social/community paths OFF. The
-// useEffect fetch overrides these once the network response lands.
+// Implementation now lives in @sburson34/mobile-shared/feature-flags so the
+// provider/hook plumbing is shared across apps; this file just supplies the
+// app-specific defaults and the backend fetcher.
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import { useContext } from 'react';
+import { createFeatureFlags } from '@sburson34/mobile-shared/feature-flags';
 import { getFeatures } from '../api/backendClient';
 
 export const DEFAULT_FEATURES = {
@@ -18,34 +20,13 @@ export const DEFAULT_FEATURES = {
   aiKillSwitch: false,
 };
 
-const FeaturesContext = createContext(DEFAULT_FEATURES);
-
-export const FeaturesProvider = ({ children }) => {
-  const [features, setFeatures] = useState(DEFAULT_FEATURES);
-
-  useEffect(() => {
-    let mounted = true;
-    getFeatures()
-      .then((f) => {
-        if (mounted && f && typeof f === 'object') {
-          setFeatures({ ...DEFAULT_FEATURES, ...f });
-        }
-      })
-      .catch(() => {
-        // Keep defaults — getFeatures already returns {} on failure but we
-        // catch defensively in case the underlying client ever changes.
-      });
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  return (
-    <FeaturesContext.Provider value={features}>
-      {children}
-    </FeaturesContext.Provider>
-  );
-};
+const {
+  FeaturesProvider,
+  useFeatures,
+  FeaturesContext,
+} = createFeatureFlags(DEFAULT_FEATURES, {
+  fetcher: () => getFeatures(),
+});
 
 /**
  * Convenience hook for reading a single flag by name. Returns the boolean
@@ -56,5 +37,4 @@ export const useFeature = (name) => {
   return features[name];
 };
 
-/** Hook for reading the whole flag bag. */
-export const useFeatures = () => useContext(FeaturesContext);
+export { FeaturesProvider, useFeatures };
