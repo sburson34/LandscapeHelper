@@ -78,6 +78,55 @@ public class AuthEndpointsTests : IClassFixture<ApiFactory>
         Assert.Equal(HttpStatusCode.Conflict, second.StatusCode);
     }
 
+    /// <summary>
+    /// Email addresses must be treated case-insensitively. Registering the same
+    /// address with different casing must collide with the existing user — anything
+    /// else allows two accounts at "the same" address and is a classic auth bug.
+    /// Register normalizes via .Trim().ToLowerInvariant() before the uniqueness check.
+    /// </summary>
+    [Fact]
+    public async Task Register_DuplicateDifferentCase_Returns409()
+    {
+        var client = _factory.CreateClient();
+        var suffix = Guid.NewGuid().ToString("N");
+        var lower = $"case-{suffix}@example.com";
+        var upper = $"CASE-{suffix}@EXAMPLE.COM";
+
+        var first = await client.PostAsJsonAsync("/api/auth/register", new
+        {
+            email = lower,
+            password = "correct-horse-battery-staple",
+        });
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+
+        var second = await client.PostAsJsonAsync("/api/auth/register", new
+        {
+            email = upper,
+            password = "correct-horse-battery-staple",
+        });
+        Assert.Equal(HttpStatusCode.Conflict, second.StatusCode);
+    }
+
+    /// <summary>
+    /// Login must succeed regardless of how the email was cased at register-time
+    /// or login-time. The service normalizes on both sides.
+    /// </summary>
+    [Fact]
+    public async Task Login_DifferentCaseFromRegister_Returns200()
+    {
+        var client = _factory.CreateClient();
+        var suffix = Guid.NewGuid().ToString("N");
+        var lower = $"login-case-{suffix}@example.com";
+        var upper = $"LOGIN-CASE-{suffix}@EXAMPLE.COM";
+        const string password = "correct-horse-battery-staple";
+
+        var reg = await client.PostAsJsonAsync("/api/auth/register", new { email = lower, password });
+        Assert.Equal(HttpStatusCode.OK, reg.StatusCode);
+
+        var login = await client.PostAsJsonAsync("/api/auth/login", new { email = upper, password });
+        Assert.Equal(HttpStatusCode.OK, login.StatusCode);
+    }
+
     [Fact]
     public async Task Login_AfterRegister_Returns200()
     {
