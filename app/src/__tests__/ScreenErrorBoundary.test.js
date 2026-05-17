@@ -1,89 +1,72 @@
-// Direct unit test for ScreenErrorBoundary's state machine — we test the
-// class methods rather than the rendered tree because the public contract is
-// (a) reportError fires on catch and (b) reset clears state and triggers the
-// onReset callback. Rendering is incidental to those behaviors.
+// Verify the local ScreenErrorBoundary wrapper passes the app's theme to
+// the shared boundary and forwards other props. The shared boundary's
+// internal behavior (componentDidCatch, fallback rendering, reset) is
+// tested in @sburson34/mobile-shared and not re-tested here.
 
-jest.mock('../services/monitoring', () => ({
-  reportError: jest.fn(),
+jest.mock('@sburson34/mobile-shared/error-boundary', () => ({
+  ScreenErrorBoundary: jest.fn(({ children }) => children ?? null),
 }));
 jest.mock('../theme', () => ({
-  colors: {
-    background: '#FFF',
-    text: '#000',
-    textSecondary: '#666',
-    primary: '#FCA004',
+  __esModule: true,
+  default: {
+    colors: {
+      background: '#F1F8E9',
+      text: '#1B5E20',
+      textSecondary: '#6D4C41',
+      primary: '#2E7D32',
+      danger: '#D84315',
+    },
+    roundness: { medium: 16 },
   },
-  roundness: { medium: 8 },
 }));
 
+const React = require('react');
+const { render } = require('@testing-library/react-native');
 const ScreenErrorBoundary = require('../components/ScreenErrorBoundary').default;
-const { reportError } = require('../services/monitoring');
+const { ScreenErrorBoundary: SharedScreenErrorBoundary } = require('@sburson34/mobile-shared/error-boundary');
 
 beforeEach(() => {
   jest.clearAllMocks();
 });
 
-describe('ScreenErrorBoundary', () => {
-  it('is a class component with the React error-boundary statics', () => {
-    expect(typeof ScreenErrorBoundary).toBe('function');
-    expect(ScreenErrorBoundary.getDerivedStateFromError).toBeDefined();
-  });
+describe('ScreenErrorBoundary (wrapper)', () => {
+  it('renders the shared ScreenErrorBoundary with theme derived from app theme', () => {
+    render(
+      React.createElement(ScreenErrorBoundary, { screenName: 'ShrubberyScreen' }, 'child'),
+    );
 
-  it('getDerivedStateFromError returns the error in state', () => {
-    const error = new Error('test');
-    const state = ScreenErrorBoundary.getDerivedStateFromError(error);
-    expect(state).toEqual({ error });
-  });
-
-  it('componentDidCatch reports the error with screenName', () => {
-    const instance = new ScreenErrorBoundary({ screenName: 'ShrubberyScreen' });
-    const error = new Error('render crash');
-    const info = { componentStack: 'at Foo\nat Bar' };
-
-    instance.componentDidCatch(error, info);
-
-    expect(reportError).toHaveBeenCalledWith(error, {
-      source: 'ShrubberyScreen',
-      operation: 'render',
-      extra: { componentStack: 'at Foo\nat Bar' },
+    expect(SharedScreenErrorBoundary).toHaveBeenCalled();
+    const props = SharedScreenErrorBoundary.mock.calls[0][0];
+    expect(props.screenName).toBe('ShrubberyScreen');
+    expect(props.theme).toEqual({
+      background: '#F1F8E9',
+      text: '#1B5E20',
+      textSecondary: '#6D4C41',
+      danger: '#DC2626',
+      primary: '#2E7D32',
+      buttonText: '#FFFFFF',
+      roundness: 16,
     });
   });
 
-  it('componentDidCatch falls back to a default screen name', () => {
-    const instance = new ScreenErrorBoundary({});
-    instance.componentDidCatch(new Error('test'), {});
-    expect(reportError).toHaveBeenCalledWith(
-      expect.any(Error),
-      expect.objectContaining({ source: 'ScreenErrorBoundary' }),
-    );
-  });
-
-  it('truncates very long componentStack strings to 1000 chars', () => {
-    const instance = new ScreenErrorBoundary({ screenName: 'Test' });
-    const longStack = 'x'.repeat(2000);
-    instance.componentDidCatch(new Error('test'), { componentStack: longStack });
-    const reported = reportError.mock.calls[0][1].extra.componentStack;
-    expect(reported.length).toBe(1000);
-  });
-
-  it('reset clears error state and fires onReset when provided', () => {
+  it('forwards onReset and fallback props', () => {
     const onReset = jest.fn();
-    const instance = new ScreenErrorBoundary({ onReset });
-    instance.setState = jest.fn();
-    instance.reset();
-    expect(instance.setState).toHaveBeenCalledWith({ error: null });
-    expect(onReset).toHaveBeenCalled();
+    const fallback = jest.fn();
+    render(
+      React.createElement(ScreenErrorBoundary, { onReset, fallback }, 'child'),
+    );
+
+    const props = SharedScreenErrorBoundary.mock.calls[0][0];
+    expect(props.onReset).toBe(onReset);
+    expect(props.fallback).toBe(fallback);
   });
 
-  it('reset works without an onReset prop', () => {
-    const instance = new ScreenErrorBoundary({});
-    instance.setState = jest.fn();
-    instance.reset();
-    expect(instance.setState).toHaveBeenCalledWith({ error: null });
-  });
+  it('forwards children', () => {
+    render(
+      React.createElement(ScreenErrorBoundary, {}, 'hello'),
+    );
 
-  it('starts in error: null state', () => {
-    const instance = new ScreenErrorBoundary({});
-    expect(instance.state).toEqual({ error: null });
+    const props = SharedScreenErrorBoundary.mock.calls[0][0];
+    expect(props.children).toBe('hello');
   });
 });
