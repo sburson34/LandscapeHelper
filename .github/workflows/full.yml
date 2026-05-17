@@ -48,6 +48,9 @@ jobs:
   backend-coverage:
     name: Backend coverage
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
     defaults:
       run:
         working-directory: backend
@@ -59,7 +62,9 @@ jobs:
           dotnet-version: '10.0.x'
           dotnet-quality: 'preview'
 
-      - run: dotnet restore LandscapeHelper.slnx
+      - env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: dotnet restore LandscapeHelper.slnx
 
       - name: Build
         run: dotnet build LandscapeHelper.slnx --no-restore --configuration Release
@@ -87,6 +92,9 @@ jobs:
   build-verify-backend:
     name: Publish-build verify (backend)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
     defaults:
       run:
         working-directory: backend/LandscapeHelper.Api
@@ -102,6 +110,8 @@ jobs:
         # Proves the API still packages cleanly for the container image
         # build. Catches issues like missing Content/CopyToPublish
         # references that unit tests cannot see.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: dotnet publish -c Release -o publish-ci
 
       - name: Smoke artifact

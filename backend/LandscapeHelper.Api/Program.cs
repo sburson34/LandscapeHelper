@@ -17,9 +17,10 @@ using Amazon.SecretsManager.Model;
 using LandscapeHelper.Api;
 using LandscapeHelper.Api.Data;
 using LandscapeHelper.Api.Integrations;
-using LandscapeHelper.Api.Middleware;
 using LandscapeHelper.Api.Models;
 using LandscapeHelper.Api.Observability;
+using Sburson.Shared.FeatureFlags;
+using Sburson.Shared.Web;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -163,6 +164,26 @@ builder.Services.AddAuthorization();
 // the current set via GET /api/features at boot to gate scaffolded screens
 // behind a server flip.
 builder.Services.AddSingleton<FeatureFlags>();
+
+// Shared web pipeline (CorrelationId / Exception / RequestLogging / SecurityHeaders).
+// Classify OpenAI ClientResultException to friendly statuses without coupling
+// the package to the OpenAI SDK.
+builder.Services.AddSburonWeb(classifiers =>
+{
+    classifiers.Add(ex =>
+    {
+        if (ex is ClientResultException cre)
+        {
+            var status = cre.Status;
+            if (status == 429)
+                return (429, "The service is temporarily busy. Please wait a moment and try again.", "rate_limited");
+            if (status == 400 || ex.Message.Contains("content_filter", StringComparison.OrdinalIgnoreCase))
+                return (422, "The AI could not process this request. Try a shorter description or different photo.", "ai_rejected");
+            return (502, "The AI service returned an error. Please try again.", "ai_error");
+        }
+        return null;
+    });
+});
 
 var app = builder.Build();
 

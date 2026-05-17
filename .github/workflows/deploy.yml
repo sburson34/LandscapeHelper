@@ -37,6 +37,8 @@ jobs:
           file: backend/LandscapeHelper.Api/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
+          secrets: |
+            github_token=${{ secrets.GITHUB_TOKEN }}
           tags: |
             ghcr.io/sburson34/landscapehelper-api:latest
             ghcr.io/sburson34/landscapehelper-api:${{ github.sha }}
