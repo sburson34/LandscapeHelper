@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using LandscapeHelper.Api.Integrations;
 using LandscapeHelper.Tests.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace LandscapeHelper.Tests.Integration;
@@ -31,7 +32,7 @@ public class KillSwitchApiFactory : ApiFactory
             Environment.SetEnvironmentVariable("AI_KILL_SWITCH", "true");
             try
             {
-                var flags = new FeatureFlags();
+                var flags = new FeatureFlags(new ConfigurationBuilder().Build());
                 services.AddSingleton(flags);
             }
             finally
