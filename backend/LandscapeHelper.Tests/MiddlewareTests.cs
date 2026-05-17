@@ -1,9 +1,9 @@
 using System.Text.Json;
-using LandscapeHelper.Api.Middleware;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Moq;
+using Sburson.Shared.Web;
 
 namespace LandscapeHelper.Tests;
 
@@ -119,7 +119,8 @@ public class ExceptionHandlerMiddlewareTests
     {
         var envMock = new Mock<IHostEnvironment>();
         envMock.Setup(e => e.EnvironmentName).Returns(isDev ? "Development" : "Production");
-        return new ExceptionHandlerMiddleware(next, envMock.Object);
+        // Empty registry — these tests exercise the default classifier path.
+        return new ExceptionHandlerMiddleware(next, envMock.Object, new ExceptionClassifierRegistry());
     }
 
     [Fact]

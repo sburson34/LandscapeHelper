@@ -1,9 +1,13 @@
 using LandscapeHelper.Api.Integrations;
+using Microsoft.Extensions.Configuration;
 
 namespace LandscapeHelper.Tests;
 
 public class FeatureFlagsTests : IDisposable
 {
+    private static FeatureFlags NewFlags() =>
+        new FeatureFlags(new ConfigurationBuilder().Build());
+
     private readonly List<string> _setVars = new();
 
     private void SetEnv(string name, string? value)
@@ -29,7 +33,7 @@ public class FeatureFlagsTests : IDisposable
         SetEnv("FEATURES_QUOTE_REQUESTS", null);
         SetEnv("AI_KILL_SWITCH", null);
 
-        var flags = new FeatureFlags();
+        var flags = NewFlags();
 
         Assert.True(flags.WeatherForecast);
         Assert.True(flags.WholeHouseAdvice);
@@ -45,7 +49,7 @@ public class FeatureFlagsTests : IDisposable
     {
         SetEnv("FEATURES_COMMUNITY", "true");
         SetEnv("FEATURES_QUOTE_REQUESTS", "1");
-        var flags = new FeatureFlags();
+        var flags = NewFlags();
         Assert.True(flags.Community);
         Assert.True(flags.QuoteRequests);
     }
@@ -54,7 +58,7 @@ public class FeatureFlagsTests : IDisposable
     public void CoreFeatures_CanBeDisabled()
     {
         SetEnv("FEATURES_SHRUBBERY_ADVICE", "false");
-        var flags = new FeatureFlags();
+        var flags = NewFlags();
         Assert.False(flags.ShrubberyAdvice);
     }
 
@@ -62,7 +66,7 @@ public class FeatureFlagsTests : IDisposable
     public void KillSwitch_CanBeEnabled()
     {
         SetEnv("AI_KILL_SWITCH", "true");
-        var flags = new FeatureFlags();
+        var flags = NewFlags();
         Assert.True(flags.AiKillSwitch);
     }
 
@@ -70,7 +74,7 @@ public class FeatureFlagsTests : IDisposable
     public void ToPublicJson_ReturnsCamelCaseObject()
     {
         SetEnv("FEATURES_COMMUNITY", null);
-        var flags = new FeatureFlags();
+        var flags = NewFlags();
         var json = flags.ToPublicJson();
         var names = json.GetType().GetProperties().Select(p => p.Name).ToList();
         Assert.Contains("weatherForecast", names);
