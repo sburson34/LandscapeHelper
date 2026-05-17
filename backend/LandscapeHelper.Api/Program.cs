@@ -14,6 +14,7 @@ using System.ClientModel;
 using System.ClientModel.Primitives;
 using Amazon.SecretsManager;
 using Amazon.SecretsManager.Model;
+using LandscapeHelper.Api;
 using LandscapeHelper.Api.Data;
 using LandscapeHelper.Api.Integrations;
 using LandscapeHelper.Api.Middleware;
@@ -194,6 +195,23 @@ string? googleApiKey = ReadSecretKey("GOOGLE_API_KEY")
 var translationCache = new System.Collections.Concurrent.ConcurrentDictionary<string, string>();
 var sharedHttpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
 
+// In-memory per-IP rate limit buckets for endpoints that accept unauthenticated
+// PII (help-requests POST) and the deletion endpoint's per-email leg. Resets on
+// process restart — good enough for tier-2 (a hostile actor would still need
+// to sustain attacks across restarts; abuse logs in Sentry catch the pattern).
+// Each entry: (windowStart, count). Keyed by "endpoint:identifier".
+var rateLimitBuckets = new System.Collections.Concurrent.ConcurrentDictionary<string, (DateTime windowStart, int count)>();
+bool RateLimitHit(string bucketKey, int max, TimeSpan window)
+{
+    var now = DateTime.UtcNow;
+    var updated = rateLimitBuckets.AddOrUpdate(
+        bucketKey,
+        addValueFactory: _ => (now, 1),
+        updateValueFactory: (_, cur) =>
+            (now - cur.windowStart) > window ? (now, 1) : (cur.windowStart, cur.count + 1));
+    return updated.count > max;
+}
+
 // Convert a JSON array element of shopping items (each either a plain string or
 // a {item, ...} object) into a list of affiliate-link records the mobile app
 // renders. Used by /api/analyze, /api/house-advice, /api/shrubbery-advice.
@@ -354,6 +372,10 @@ app.UseStaticFiles();
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseMiddleware<ExceptionHandlerMiddleware>();
 app.UseMiddleware<RequestLoggingMiddleware>();
+// Defense-in-depth security headers on every response. The shared Caddy
+// reverse proxy may set the same headers (idempotent); this guarantees they
+// land even if a request bypasses Caddy (e.g. direct EB hit during cutover).
+app.UseMiddleware<SecurityHeadersMiddleware>();
 
 app.UseCors("MobilePolicy");
 
@@ -405,7 +427,8 @@ app.MapPost("/api/account/delete", async (
               ?? context.User?.FindFirst("sub")?.Value;
     if (int.TryParse(sub, out var parsedId)) authedUserId = parsedId;
 
-    // Per-IP cap so a hostile actor cannot flood the table.
+    // Per-IP cap so a hostile actor cannot flood the table. We still respond
+    // with a fake requestId to avoid turning this into an existence oracle.
     const int PerIpPerDay = 20;
     var since = DateTime.UtcNow.AddHours(-24);
     int ipCount = 0;
@@ -417,6 +440,22 @@ app.MapPost("/api/account/delete", async (
     {
         logger.LogWarning("account/delete: per-IP cap hit. ip={Ip} correlationId={CorrelationId}", clientIp, correlationId);
         return Results.Ok(new { status = "pending_verification", requestId = fakeRequestId });
+    }
+
+    // Per-email cap (DIYHelper2 canonical pattern). Prevents an attacker on
+    // rotating IPs from grinding through the table targeting one address. We
+    // intentionally do NOT reveal whether the email matches an account —
+    // returning the same 200 + fake requestId shape as the IP-cap path.
+    if (!string.IsNullOrEmpty(email))
+    {
+        int emailCount = await db.DataDeletionRequests
+            .CountAsync(r => r.Email == email && r.CreatedAt >= since);
+        if (emailCount >= 5)
+        {
+            logger.LogWarning("account/delete: per-email cap hit. emailHash={Hash} correlationId={CorrelationId}",
+                HashEmail(email), correlationId);
+            return Results.Ok(new { status = "pending_verification", requestId = fakeRequestId });
+        }
     }
 
     var record = new DataDeletionRequest
@@ -591,6 +630,13 @@ IMPORTANT for youtube_links:
 
                 if (!string.IsNullOrEmpty(item.Base64))
                 {
+                    if (!InputValidation.IsAcceptableImage(item.Base64, item.MimeType))
+                    {
+                        logger.LogWarning("analyze: rejected image (size {Size} chars, mime {Mime})",
+                            item.Base64.Length, item.MimeType ?? "(none)");
+                        continue;
+                    }
+                    if (imageCount > InputValidation.MaxImagesPerRequest) break;
                     try
                     {
                         byte[] data = Convert.FromBase64String(item.Base64);
@@ -605,17 +651,29 @@ IMPORTANT for youtube_links:
                 }
                 else if (!string.IsNullOrEmpty(item.Url))
                 {
-                    if (Uri.TryCreate(item.Url, UriKind.Absolute, out var uri))
+                    // Tighten to https-only and reject hostnames OpenAI's
+                    // image-fetcher could be coerced into hitting on our
+                    // network's behalf (loopback / link-local / RFC1918).
+                    // The fetch happens server-to-server from OpenAI's side,
+                    // but we still don't want to be the request originator
+                    // for arbitrary internal targets.
+                    if (Uri.TryCreate(item.Url, UriKind.Absolute, out var uri)
+                        && uri.Scheme == "https"
+                        && !string.IsNullOrEmpty(uri.Host)
+                        && !uri.IsLoopback
+                        && !uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+                        && !uri.Host.StartsWith("169.254.", StringComparison.Ordinal)        // link-local / EC2 IMDS
+                        && !uri.Host.StartsWith("10.", StringComparison.Ordinal)             // RFC1918
+                        && !uri.Host.StartsWith("192.168.", StringComparison.Ordinal)
+                        && !(uri.Host.StartsWith("172.", StringComparison.Ordinal) &&
+                             int.TryParse(uri.Host.Split('.')[1], out int oct) && oct >= 16 && oct <= 31))
                     {
-                        if (uri.Scheme == "http" || uri.Scheme == "https")
-                        {
-                            userMessageParts.Add(ChatMessageContentPart.CreateImagePart(uri));
-                            hasValidImages = true;
-                        }
-                        else
-                        {
-                            logger.LogWarning("Skipping non-HTTP(S) media URL: {Url}", item.Url);
-                        }
+                        userMessageParts.Add(ChatMessageContentPart.CreateImagePart(uri));
+                        hasValidImages = true;
+                    }
+                    else
+                    {
+                        logger.LogWarning("Skipping rejected media URL: {Url}", item.Url);
                     }
                 }
             }
@@ -714,20 +772,68 @@ app.MapPost("/api/ask-helper", async ([FromBody] AskHelperRequest request, [From
 
 // ── Help Request endpoints ──────────────────────────────────────────
 
-app.MapPost("/api/help-requests", async ([FromBody] CreateHelpRequestDto dto, AppDbContext db) =>
+// Public, unauthenticated PII intake — the mobile app calls this when the
+// user requests a contractor quote. Hardened with:
+//   1. Per-IP rate limit (CarHelper had an identical endpoint with no cap and
+//      it was the headline finding of its tier-2 review).
+//   2. Shape checks + length caps on every field so a hostile actor can't
+//      stuff multi-MB strings into the DB row-by-row.
+//   3. Single attached photo capped at MaxBase64ImageChars and MIME-validated
+//      so a giant base64 blob doesn't bypass the 50 MB request limit by
+//      slipping in just under the cap on a flood of small requests.
+app.MapPost("/api/help-requests", async (
+    [FromBody] CreateHelpRequestDto dto,
+    HttpContext context,
+    AppDbContext db,
+    ILogger<Program> logger) =>
 {
+    // Basic shape + length validation. Rejected requests get 400 with a stable
+    // error code so the mobile UI can surface "please re-enter" without
+    // leaking which specific field tripped the regex.
+    if (dto == null)
+        return Results.Json(new { error = "Missing request body." }, statusCode: 400);
+    if (string.IsNullOrWhiteSpace(dto.CustomerName) || dto.CustomerName.Length > InputValidation.MaxShortStringChars)
+        return Results.Json(new { error = "customerName is required." }, statusCode: 400);
+    if (!InputValidation.LooksLikeEmail(dto.CustomerEmail))
+        return Results.Json(new { error = "customerEmail is required." }, statusCode: 400);
+    if (string.IsNullOrWhiteSpace(dto.CustomerPhone) || dto.CustomerPhone.Length > InputValidation.MaxShortStringChars)
+        return Results.Json(new { error = "customerPhone is required." }, statusCode: 400);
+    if (string.IsNullOrWhiteSpace(dto.ProjectTitle) || dto.ProjectTitle.Length > InputValidation.MaxShortStringChars)
+        return Results.Json(new { error = "projectTitle is required." }, statusCode: 400);
+    if (dto.UserDescription != null && dto.UserDescription.Length > InputValidation.MaxDescriptionChars)
+        return Results.Json(new { error = "userDescription is too long." }, statusCode: 400);
+    if (dto.ProjectData != null && dto.ProjectData.Length > InputValidation.MaxNotesChars * 4)
+        return Results.Json(new { error = "projectData is too long." }, statusCode: 400);
+    if (!string.IsNullOrEmpty(dto.ImageBase64) && dto.ImageBase64.Length > InputValidation.MaxBase64ImageChars)
+        return Results.Json(new { error = "image is too large." }, statusCode: 400);
+
+    // Per-IP rate limit (PII intake endpoint). CarHelper's tier-2 review
+    // flagged the same endpoint shape as a flood vector — 20/hour per IP is
+    // ample for a legitimate user and stops drive-by abuse from filling the
+    // contractor's queue with junk.
+    var clientIp = context.Request.Headers["X-Forwarded-For"].FirstOrDefault()?.Split(',').FirstOrDefault()?.Trim()
+                   ?? context.Connection.RemoteIpAddress?.ToString();
+    if (!string.IsNullOrEmpty(clientIp)
+        && RateLimitHit($"help:ip:{clientIp}", max: 20, window: TimeSpan.FromHours(1)))
+    {
+        logger.LogWarning("help-requests: per-IP rate limit hit. ip={Ip}", clientIp);
+        return Results.Json(
+            new { error = "Too many quote requests. Please try again later." },
+            statusCode: 429);
+    }
+
     var helpRequest = new HelpRequest
     {
-        CustomerName = dto.CustomerName,
-        CustomerEmail = dto.CustomerEmail,
-        CustomerPhone = dto.CustomerPhone,
-        ProjectTitle = dto.ProjectTitle,
-        UserDescription = dto.UserDescription,
-        ProjectData = dto.ProjectData,
-        ImageBase64 = dto.ImageBase64,
-        Status = "new",
-        CreatedAt = DateTime.UtcNow,
-        UpdatedAt = DateTime.UtcNow
+        CustomerName    = InputValidation.Trunc(dto.CustomerName.Trim(),    InputValidation.MaxShortStringChars)!,
+        CustomerEmail   = InputValidation.Trunc(dto.CustomerEmail.Trim(),   InputValidation.MaxShortStringChars)!,
+        CustomerPhone   = InputValidation.Trunc(dto.CustomerPhone.Trim(),   InputValidation.MaxShortStringChars)!,
+        ProjectTitle    = InputValidation.Trunc(dto.ProjectTitle.Trim(),    InputValidation.MaxShortStringChars)!,
+        UserDescription = InputValidation.Trunc(dto.UserDescription ?? "",  InputValidation.MaxDescriptionChars)!,
+        ProjectData     = InputValidation.Trunc(dto.ProjectData ?? "",      InputValidation.MaxNotesChars * 4)!,
+        ImageBase64     = InputValidation.IsAcceptableImage(dto.ImageBase64, null) ? dto.ImageBase64 : null,
+        Status          = "new",
+        CreatedAt       = DateTime.UtcNow,
+        UpdatedAt       = DateTime.UtcNow,
     };
     db.HelpRequests.Add(helpRequest);
     await db.SaveChangesAsync();
@@ -837,14 +943,22 @@ Return JSON only:
         var parts = new List<ChatMessageContentPart> { ChatMessageContentPart.CreateTextPart(prompt) };
         if (!string.IsNullOrEmpty(req.Base64Image))
         {
-            try
+            if (!InputValidation.IsAcceptableImage(req.Base64Image, req.MimeType))
             {
-                byte[] data = Convert.FromBase64String(req.Base64Image);
-                parts.Add(ChatMessageContentPart.CreateImagePart(BinaryData.FromBytes(data), req.MimeType ?? "image/jpeg"));
+                logger.LogWarning("verify-step: rejected image (size {Size} chars, mime {Mime})",
+                    req.Base64Image.Length, req.MimeType ?? "(none)");
             }
-            catch (Exception ex)
+            else
             {
-                logger.LogWarning(ex, "verify-step: failed to decode image");
+                try
+                {
+                    byte[] data = Convert.FromBase64String(req.Base64Image);
+                    parts.Add(ChatMessageContentPart.CreateImagePart(BinaryData.FromBytes(data), req.MimeType ?? "image/jpeg"));
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "verify-step: failed to decode image");
+                }
             }
         }
 
@@ -900,12 +1014,15 @@ Return JSON only:
         var parts = new List<ChatMessageContentPart> { ChatMessageContentPart.CreateTextPart(prompt) };
         if (req.Media != null)
         {
+            int accepted = 0;
             foreach (var m in req.Media)
             {
-                if (m.Type == "video" || string.IsNullOrEmpty(m.Base64)) continue;
+                if (m.Type == "video") continue;
+                if (!InputValidation.IsAcceptableImage(m.Base64, m.MimeType)) continue;
+                if (++accepted > InputValidation.MaxImagesPerRequest) break;
                 try
                 {
-                    byte[] data = Convert.FromBase64String(m.Base64);
+                    byte[] data = Convert.FromBase64String(m.Base64!);
                     parts.Add(ChatMessageContentPart.CreateImagePart(BinaryData.FromBytes(data), m.MimeType ?? "image/jpeg"));
                 }
                 catch { }
@@ -958,12 +1075,15 @@ If the description is already complete and unambiguous, return {{""questions"": 
         var parts = new List<ChatMessageContentPart> { ChatMessageContentPart.CreateTextPart(prompt) };
         if (req.Media != null)
         {
+            int accepted = 0;
             foreach (var m in req.Media)
             {
-                if (m.Type == "video" || string.IsNullOrEmpty(m.Base64)) continue;
+                if (m.Type == "video") continue;
+                if (!InputValidation.IsAcceptableImage(m.Base64, m.MimeType)) continue;
+                if (++accepted > InputValidation.MaxImagesPerRequest) break;
                 try
                 {
-                    byte[] data = Convert.FromBase64String(m.Base64);
+                    byte[] data = Convert.FromBase64String(m.Base64!);
                     parts.Add(ChatMessageContentPart.CreateImagePart(BinaryData.FromBytes(data), m.MimeType ?? "image/jpeg"));
                 }
                 catch { }
@@ -1084,11 +1204,17 @@ app.MapPost("/api/house-advice", async ([FromBody] WholeHouseRequest req, HttpCo
             if (sidePhotos == null) continue;
             foreach (var photo in sidePhotos)
             {
-                if (string.IsNullOrEmpty(photo.Base64)) continue;
+                if (!InputValidation.IsAcceptableImage(photo.Base64, photo.MimeType))
+                {
+                    logger.LogWarning("house-advice: rejected image for side {Side} (size {Size} chars, mime {Mime})",
+                        side, photo.Base64?.Length ?? 0, photo.MimeType ?? "(none)");
+                    continue;
+                }
+                if (imageCount >= InputValidation.MaxImagesPerRequest) break;
                 try
                 {
                     imageCount++;
-                    byte[] data = Convert.FromBase64String(photo.Base64);
+                    byte[] data = Convert.FromBase64String(photo.Base64!);
                     userParts.Add(ChatMessageContentPart.CreateTextPart($"[Photo {imageCount}: {side} side of house]"));
                     userParts.Add(ChatMessageContentPart.CreateImagePart(BinaryData.FromBytes(data), photo.MimeType ?? "image/jpeg"));
                 }
@@ -1256,6 +1382,15 @@ IMPORTANT:
 // Caller decides whether to fail the request or proceed without weather.
 async Task<WeatherInfo?> FetchWeatherAsync(string zip, ILogger logger, CancellationToken ct)
 {
+    // Hard-validate the ZIP shape before composing the URL. The base URL is
+    // hardcoded so this isn't a true SSRF sink, but rejecting non-numeric input
+    // here keeps us from making junk outbound calls and limits what the
+    // zippopotam side sees from us.
+    if (!InputValidation.LooksLikeZip(zip))
+    {
+        logger.LogInformation("weather: rejecting non-US-ZIP input shape");
+        return null;
+    }
     try
     {
         // Step 1: zip → lat/lon/place via Zippopotam.us (US-only; free, no key)
@@ -1282,6 +1417,16 @@ async Task<WeatherInfo?> FetchWeatherAsync(string zip, ILogger logger, Cancellat
         if (!double.TryParse(place.GetProperty("longitude").GetString(),
                 System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double lon))
             return null;
+        // Defensive range check before composing the Open-Meteo URL. The lat/lon
+        // come from zippopotam's response, not the user directly, but a
+        // compromised or hostile upstream could still try to slip ASCII-only
+        // garbage through (URL-injection via the query string). Numeric range
+        // bounds make the value harmless regardless.
+        if (lat < -90 || lat > 90 || lon < -180 || lon > 180)
+        {
+            logger.LogWarning("weather: zippopotam returned out-of-range lat/lon for zip {Zip}", zip);
+            return null;
+        }
 
         // Step 2: lat/lon → 14-day forecast via Open-Meteo (free, no key)
         var forecastUrl =
@@ -1404,11 +1549,17 @@ app.MapPost("/api/shrubbery-advice", async ([FromBody] ShrubberyRequest req, Htt
         {
             foreach (var photo in req.Photos)
             {
-                if (string.IsNullOrEmpty(photo.Base64)) continue;
+                if (!InputValidation.IsAcceptableImage(photo.Base64, photo.MimeType))
+                {
+                    logger.LogWarning("shrubbery-advice: rejected image (size {Size} chars, mime {Mime})",
+                        photo.Base64?.Length ?? 0, photo.MimeType ?? "(none)");
+                    continue;
+                }
+                if (imageCount >= InputValidation.MaxImagesPerRequest) break;
                 try
                 {
                     imageCount++;
-                    byte[] data = Convert.FromBase64String(photo.Base64);
+                    byte[] data = Convert.FromBase64String(photo.Base64!);
                     userParts.Add(ChatMessageContentPart.CreateTextPart($"[Photo {imageCount}]"));
                     userParts.Add(ChatMessageContentPart.CreateImagePart(BinaryData.FromBytes(data), photo.MimeType ?? "image/jpeg"));
                 }
