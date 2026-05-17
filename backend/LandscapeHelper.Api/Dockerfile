@@ -9,7 +9,8 @@ WORKDIR /src
 # auto-issued GITHUB_TOKEN as a BuildKit secret.
 COPY nuget.config nuget.config
 COPY backend/LandscapeHelper.Api/LandscapeHelper.Api.csproj backend/LandscapeHelper.Api/
-RUN --mount=type=secret,id=github_token,env=GITHUB_TOKEN \
+RUN --mount=type=secret,id=github_token \
+    GITHUB_TOKEN="$(cat /run/secrets/github_token)" \
     dotnet restore backend/LandscapeHelper.Api/LandscapeHelper.Api.csproj
 
 COPY backend/ backend/
