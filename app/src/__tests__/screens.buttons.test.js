@@ -156,19 +156,23 @@ afterEach(() => {
 // ── Settings ────────────────────────────────────────────────────────
 
 describe('Settings screen — primary buttons', () => {
+  // First test in this suite loads ~19 screen modules transitively (via the
+  // backendClient + storage + navigation mocks above), which on the CI Linux
+  // runner can take a few seconds — bumping the per-test timeout keeps this
+  // from flaking on cold runs while the local Windows run lands in <1s.
   test('Sign in button calls backendClient.login with entered credentials', async () => {
     const Settings = require('../screens/Settings').default;
-    const { findByPlaceholderText, getAllByText } = renderScreen(Settings);
+    const { findByPlaceholderText, getByTestId } = renderScreen(Settings);
 
     const emailInput = await findByPlaceholderText('Email');
     const pwInput = await findByPlaceholderText(/Password/);
     fireEvent.changeText(emailInput, 'gardener@example.com');
     fireEvent.changeText(pwInput, 'correct-horse-battery-staple');
 
-    // Two "Sign in" labels — the mode-toggle pill and the submit button. The
-    // submit button is rendered last, so the trailing match is the one we want.
-    const matches = getAllByText('Sign in');
-    fireEvent.press(matches[matches.length - 1]);
+    // Press the auth submit button by stable testID — the visible label is
+    // "Sign in" which also appears as the mode-toggle pill, so a text-based
+    // locator would be ambiguous.
+    fireEvent.press(getByTestId('settings-auth-submit'));
 
     await waitFor(() =>
       expect(backendClient.login).toHaveBeenCalledWith({
@@ -176,7 +180,7 @@ describe('Settings screen — primary buttons', () => {
         password: 'correct-horse-battery-staple',
       })
     );
-  });
+  }, 15000);
 
   test('Save profile button hits saveUserProfile + setAppPrefs', async () => {
     const Settings = require('../screens/Settings').default;

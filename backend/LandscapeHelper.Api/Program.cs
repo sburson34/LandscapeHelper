@@ -403,6 +403,29 @@ if (app.Environment.IsDevelopment())
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
+// Serve files under /.well-known/ (security.txt, etc.). The default
+// PhysicalFileProvider used by UseStaticFiles() filters dot-prefixed
+// directories via ExclusionFilters.Sensitive, which on Linux means
+// /.well-known/security.txt returns 404 even though the file exists in
+// wwwroot. Mount a second StaticFiles middleware scoped to that subtree
+// with ExclusionFilters.None so the RFC 9116 bug-bounty file (and any
+// future ACME / well-known endpoints) actually serve.
+{
+    var wellKnownPath = Path.Combine(app.Environment.WebRootPath ?? "wwwroot", ".well-known");
+    if (Directory.Exists(wellKnownPath))
+    {
+        app.UseStaticFiles(new Microsoft.AspNetCore.Builder.StaticFileOptions
+        {
+            FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(
+                wellKnownPath,
+                Microsoft.Extensions.FileProviders.Physical.ExclusionFilters.None),
+            RequestPath = "/.well-known",
+            ServeUnknownFileTypes = true,
+            DefaultContentType = "text/plain",
+        });
+    }
+}
+
 // ── Middleware trio (correlation id -> exception handler -> request log) ──
 // Order matters: CorrelationId runs first so the ID is in scope for both the
 // exception handler's log line and the request logger's structured fields.

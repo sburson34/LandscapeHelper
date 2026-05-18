@@ -1,7 +1,9 @@
 using LandscapeHelper.Api.Observability;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Sentry;
 
 namespace LandscapeHelper.Tests.Integration;
 
@@ -19,16 +21,22 @@ public class SentryInitTests
     {
         // Without a DSN configured the shim must NOT throw and the host must
         // still build. Production runs hit this code path on every PR build
-        // (no DSN in CI secrets).
+        // (no DSN in CI secrets). Also assert IHub resolves to the disabled
+        // hub — Sentry registers a default singleton even when DSN is empty,
+        // so checking it is reachable is what catches an accidental "early
+        // return broke the wiring" regression.
         Environment.SetEnvironmentVariable("Sentry__Dsn", null);
 
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseLandscapeHelperSentry();
 
-        // Reaching .Build() proves the shim did not register a broken Sentry
-        // pipeline.
-        var app = builder.Build();
-        Assert.NotNull(app);
+        using var app = builder.Build();
+        var hub = app.Services.GetService<IHub>();
+        // No DSN means Sentry stays as the disabled hub. The contract here:
+        // either no hub at all (early-return) or a non-enabled hub. Both are
+        // acceptable; both prove the shim did not crash the DI container.
+        Assert.True(hub is null || !hub.IsEnabled,
+            "Without a DSN the shim must NOT register an enabled Sentry hub.");
     }
 
     [Fact]
@@ -43,8 +51,15 @@ public class SentryInitTests
         {
             var builder = WebApplication.CreateBuilder();
             builder.WebHost.UseLandscapeHelperSentry();
-            var app = builder.Build();
-            Assert.NotNull(app);
+            using var app = builder.Build();
+
+            // With a DSN, Sentry.AspNetCore registers IHub and SentryClient
+            // into DI. Resolving IHub and asserting IsEnabled proves the
+            // call actually wired Sentry, not just no-op'd past it.
+            var hub = app.Services.GetService<IHub>();
+            Assert.NotNull(hub);
+            Assert.True(hub!.IsEnabled,
+                "With a DSN configured the registered Sentry hub must be enabled.");
         }
         finally
         {

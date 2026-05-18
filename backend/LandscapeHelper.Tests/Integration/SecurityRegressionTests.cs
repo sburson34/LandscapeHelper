@@ -71,6 +71,29 @@ public class SecurityRegressionTests : IClassFixture<ApiFactory>
         Assert.True(resp.Headers.Contains("Permissions-Policy"));
     }
 
+    // ── Sburson.Shared.Backend middleware is actually wired ────────────
+
+    [Fact]
+    public async Task CorrelationIdMiddleware_EchoesClientHeader()
+    {
+        // CorrelationIdMiddleware (from Sburson.Shared.Backend) MUST be in the
+        // pipeline before the request logger / exception handler so every
+        // log line and error response can be threaded back to the originating
+        // request. The contract: when a client supplies X-Correlation-Id, the
+        // server echoes it back on the response.
+        var client = _factory.CreateClient();
+        const string clientId = "sec-regression-corr-abc123";
+        var req = new HttpRequestMessage(HttpMethod.Get, "/api/features");
+        req.Headers.Add("X-Correlation-Id", clientId);
+        var resp = await client.SendAsync(req);
+
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+        Assert.True(resp.Headers.Contains("X-Correlation-Id"),
+            "Response must echo X-Correlation-Id when CorrelationIdMiddleware is wired.");
+        var echoed = resp.Headers.GetValues("X-Correlation-Id").First();
+        Assert.Equal(clientId, echoed);
+    }
+
     // ── No stack-trace leakage in error responses ──────────────────────
 
     [Fact]
@@ -85,11 +108,13 @@ public class SecurityRegressionTests : IClassFixture<ApiFactory>
         var client = _factory.CreateClient();
         var resp = await client.PostAsync("/api/help-requests",
             new StringContent("{ this is not JSON ::: ", System.Text.Encoding.UTF8, "application/json"));
-        // Either 400 (parser caught it) or 500 — both must NOT contain a stack
-        // trace. The shared middleware response shape is
-        // { "error": "...", "code": "...", "correlationId": "..." }.
-        Assert.NotEqual(HttpStatusCode.NotFound, resp.StatusCode);
+        // Malformed JSON must be classified by ExceptionHandlerMiddleware as
+        // a 400 bad_request — not a 404 (route mis-mapped) and not a 500
+        // (handler swallowed the parse error). Either way the response must
+        // be the structured shape, not an HTML stack trace.
+        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
         var body = await resp.Content.ReadAsStringAsync();
+        Assert.Contains("bad_request", body);
         Assert.DoesNotContain("at LandscapeHelper.Api", body);
         Assert.DoesNotContain("--- End of stack trace ---", body);
         Assert.DoesNotContain("System.NullReferenceException", body);
