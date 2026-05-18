@@ -411,7 +411,13 @@ app.UseStaticFiles();
 // with ExclusionFilters.None so the RFC 9116 bug-bounty file (and any
 // future ACME / well-known endpoints) actually serve.
 {
-    var wellKnownPath = Path.Combine(app.Environment.WebRootPath ?? "wwwroot", ".well-known");
+    // Resolve WebRootPath if set, otherwise fall back to <ContentRoot>/wwwroot.
+    // The bare "wwwroot" fallback (CWD-relative) was the Linux-CI failure mode:
+    // GH Actions' runner cwd is the repo root, not the API project, so the
+    // relative path didn't match the actual wwwroot location.
+    var webRoot = app.Environment.WebRootPath
+        ?? Path.Combine(app.Environment.ContentRootPath, "wwwroot");
+    var wellKnownPath = Path.Combine(webRoot, ".well-known");
     if (Directory.Exists(wellKnownPath))
     {
         app.UseStaticFiles(new Microsoft.AspNetCore.Builder.StaticFileOptions
