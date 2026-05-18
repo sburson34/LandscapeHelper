@@ -199,6 +199,24 @@ string? openAiKey;
         startupLogger.LogInformation("Backend starting up. Listening for requests...");
 }
 
+// Optional override for the OpenAI base endpoint. Lets integration tests redirect
+// every `new ChatClient(...)` to a faked HTTP server so we cover the analyze /
+// ask-helper / verify-step / diagnose / clarify / house-advice / shrubbery-advice
+// branches deterministically. Empty / unset = real api.openai.com.
+Uri? openAiEndpoint = null;
+{
+    var raw = Environment.GetEnvironmentVariable("OPENAI_BASE_URL");
+    if (!string.IsNullOrWhiteSpace(raw) && Uri.TryCreate(raw, UriKind.Absolute, out var parsed))
+        openAiEndpoint = parsed;
+}
+OpenAIClientOptions BuildOpenAiOptions(TimeSpan? networkTimeout = null)
+{
+    var opts = new OpenAIClientOptions();
+    if (networkTimeout.HasValue) opts.NetworkTimeout = networkTimeout.Value;
+    if (openAiEndpoint != null) opts.Endpoint = openAiEndpoint;
+    return opts;
+}
+
 // Affiliate program configuration
 // Replace these placeholder values with your actual affiliate IDs once approved
 string amazonAssociateTag = Environment.GetEnvironmentVariable("AMAZON_ASSOCIATE_TAG") ?? "landscapehelper-20";
@@ -529,8 +547,7 @@ app.MapPost("/api/analyze", async ([FromBody] AnalyzeProjectRequest request, [Fr
             return Results.Json(new { error = "OPENAI_API_KEY is not configured." }, statusCode: 500);
         }
 
-        OpenAIClientOptions clientOptions = new();
-        clientOptions.NetworkTimeout = TimeSpan.FromMinutes(2); // Wait up to 2 minutes for long uploads/analysis
+        OpenAIClientOptions clientOptions = BuildOpenAiOptions(TimeSpan.FromMinutes(2)); // Wait up to 2 minutes for long uploads/analysis
 
         ChatClient client = new(model: "gpt-4o", new ApiKeyCredential(openAiKey), clientOptions);
 
@@ -765,7 +782,7 @@ app.MapPost("/api/ask-helper", async ([FromBody] AskHelperRequest request, [From
             return Results.Json(new { error = "OPENAI_API_KEY is not configured." }, statusCode: 500);
         }
 
-        OpenAIClientOptions clientOptions = new();
+        OpenAIClientOptions clientOptions = BuildOpenAiOptions();
         ChatClient client = new(model: "gpt-4o", new ApiKeyCredential(openAiKey), clientOptions);
 
         string contextJson = JsonSerializer.Serialize(request.ProjectContext);
@@ -942,7 +959,7 @@ app.MapPost("/api/verify-step", async ([FromBody] VerifyStepRequest req, [FromSe
         if (string.IsNullOrEmpty(openAiKey))
             return Results.Json(new { error = "OPENAI_API_KEY is not configured." }, statusCode: 500);
 
-        var clientOptions = new OpenAIClientOptions { NetworkTimeout = TimeSpan.FromMinutes(2) };
+        var clientOptions = BuildOpenAiOptions(TimeSpan.FromMinutes(2));
         ChatClient client = new(model: "gpt-4o", new ApiKeyCredential(openAiKey), clientOptions);
 
         bool isEs = string.Equals(req.Language, "es", StringComparison.OrdinalIgnoreCase);
@@ -1012,7 +1029,7 @@ app.MapPost("/api/diagnose", async ([FromBody] AnalyzeProjectRequest req, [FromS
         if (string.IsNullOrEmpty(openAiKey))
             return Results.Json(new { error = "OPENAI_API_KEY is not configured." }, statusCode: 500);
 
-        var clientOptions = new OpenAIClientOptions { NetworkTimeout = TimeSpan.FromMinutes(2) };
+        var clientOptions = BuildOpenAiOptions(TimeSpan.FromMinutes(2));
         ChatClient client = new(model: "gpt-4o", new ApiKeyCredential(openAiKey), clientOptions);
 
         bool isEs = string.Equals(req.Language, "es", StringComparison.OrdinalIgnoreCase);
@@ -1078,7 +1095,7 @@ app.MapPost("/api/clarify", async ([FromBody] AnalyzeProjectRequest req, [FromSe
         if (string.IsNullOrEmpty(openAiKey))
             return Results.Json(new { error = "OPENAI_API_KEY is not configured." }, statusCode: 500);
 
-        ChatClient client = new(model: "gpt-4o", new ApiKeyCredential(openAiKey));
+        ChatClient client = new(model: "gpt-4o", new ApiKeyCredential(openAiKey), BuildOpenAiOptions());
 
         bool isEs = string.Equals(req.Language, "es", StringComparison.OrdinalIgnoreCase);
         string lang = isEs ? " Respond in Spanish." : "";
@@ -1205,7 +1222,7 @@ app.MapPost("/api/house-advice", async ([FromBody] WholeHouseRequest req, HttpCo
             }
         }
 
-        var clientOptions = new OpenAIClientOptions { NetworkTimeout = TimeSpan.FromMinutes(3) };
+        var clientOptions = BuildOpenAiOptions(TimeSpan.FromMinutes(3));
         ChatClient client = new(model: "gpt-4o", new ApiKeyCredential(openAiKey), clientOptions);
 
         // Build image content parts, labelled by side
@@ -1561,7 +1578,7 @@ app.MapPost("/api/shrubbery-advice", async ([FromBody] ShrubberyRequest req, Htt
             weather = await FetchWeatherAsync(req.Zip.Trim(), logger, http.RequestAborted);
         }
 
-        var clientOptions = new OpenAIClientOptions { NetworkTimeout = TimeSpan.FromMinutes(3) };
+        var clientOptions = BuildOpenAiOptions(TimeSpan.FromMinutes(3));
         ChatClient client = new(model: "gpt-4o", new ApiKeyCredential(openAiKey), clientOptions);
 
         var userParts = new List<ChatMessageContentPart>();
@@ -1886,7 +1903,7 @@ app.MapPost("/api/translate-content", async ([FromBody] TranslateRequest req, [F
         if (missingTexts.Count == 0)
             return Results.Ok(new { translations = results });
 
-        OpenAIClientOptions clientOptions = new() { NetworkTimeout = TimeSpan.FromMinutes(2) };
+        OpenAIClientOptions clientOptions = BuildOpenAiOptions(TimeSpan.FromMinutes(2));
         ChatClient client = new(model: "gpt-4o-mini", new ApiKeyCredential(openAiKey), clientOptions);
 
         // Build a numbered list so the model returns a JSON array of the same length

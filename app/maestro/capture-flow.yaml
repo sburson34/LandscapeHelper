@@ -1,0 +1,24 @@
+# Capture flow smoke: open the app, land on Capture, hit the description-only
+# path (no real camera available in the emulator), and confirm the screen does
+# not crash. The full analyze-with-image flow is documented in the manual
+# checklist because it requires real camera + OpenAI credits.
+appId: com.landscapehelper
+---
+- launchApp:
+    clearState: true
+
+# The Capture screen is the root route after cold launch.
+- assertVisible:
+    text: "Landscape Helper"
+    optional: true
+
+# Type a project description if a description input is present. The screen has
+# both a voice-to-text and a plain-text input; we use the text input here
+# because Maestro can't drive speech-recognition.
+- inputText: "Refresh the front bed mulch"
+    optional: true
+
+# The capture button is labelled "Take photo" or shown as a camera icon. We
+# don't try to verify the analyze path here — that lives in the live-contract
+# suite.
+- assertNotVisible: "Something went wrong"

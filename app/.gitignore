@@ -44,6 +44,9 @@ ios/.xcode.env.local
 *.log
 .DS_Store
 
+# Test artifacts
+coverage/
+
 # Elastic Beanstalk Files
 .elasticbeanstalk/*
 !.elasticbeanstalk/*.cfg.yml

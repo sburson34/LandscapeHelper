@@ -49,6 +49,7 @@ public class KillSwitchApiFactory : ApiFactory
 /// a structured 503 before OpenAI is invoked. Without these tests the
 /// flag is dead-on-arrival the next time it gets needed.
 /// </summary>
+[Collection(nameof(EnvironmentMutatingCollection))]
 public class AiKillSwitchEndpointsTests
 {
     [Theory]

@@ -1,0 +1,61 @@
+name: Live contract tests
+
+# Weekly real-network tests against the external APIs LandscapeHelper depends
+# on (currently: OpenAI GPT-4o vision). Gated by repo secrets so a fork run
+# won't burn credits. Tests skip cleanly when secrets are absent — a no-creds
+# run is a no-op pass, not a failure.
+#
+# This job is intentionally OUT of pr.yml / full.yml — landing a PR must not
+# require a live OpenAI quota.
+
+on:
+  schedule:
+    # 06:00 UTC Mondays — gives the on-call rotation a clean read of weekly
+    # provider-side drift on Monday morning.
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+jobs:
+  contract:
+    name: Live contract (real OpenAI)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      # GHCR auth for restoring Sburson.Shared.Backend.
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Real OpenAI key. Skipped tests if absent — see AnalyzeLiveTests.
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          dotnet-quality: 'preview'
+
+      - name: Restore (live tests project)
+        run: dotnet restore LandscapeHelper.Tests.Live/LandscapeHelper.Tests.Live.csproj
+
+      - name: Run live contract suite
+        # Live project is intentionally not in the .slnx — we target the csproj
+        # directly so plain `dotnet test` on the solution remains hermetic.
+        run: >
+          dotnet test LandscapeHelper.Tests.Live/LandscapeHelper.Tests.Live.csproj
+          --configuration Release
+          --logger "console;verbosity=normal"
+          --logger "trx;LogFileName=live-contract.trx"
+          --results-directory TestResults
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-contract-results
+          path: backend/TestResults/**/*.trx
+          if-no-files-found: warn
+          retention-days: 30
