@@ -25,6 +25,17 @@ public class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
     {
         builder.UseEnvironment(Environments.Development);
 
+        // Point the test host at the API project's source dir so
+        // app.Environment.WebRootPath resolves to its real wwwroot (containing
+        // .well-known/security.txt). Without this the conditional StaticFiles
+        // mount in Program.cs is skipped on Linux CI and the SecurityTxt test
+        // fails. Not using UseSolutionRelativeContentRoot because this repo
+        // uses a .slnx solution file, which that helper doesn't discover.
+        var testBin = Path.GetDirectoryName(typeof(ApiFactory).Assembly.Location)!;
+        var apiContentRoot = Path.GetFullPath(
+            Path.Combine(testBin, "..", "..", "..", "..", "LandscapeHelper.Api"));
+        builder.UseContentRoot(apiContentRoot);
+
         builder.ConfigureServices(services =>
         {
             // Remove the production DbContext registration (sqlite-on-disk
