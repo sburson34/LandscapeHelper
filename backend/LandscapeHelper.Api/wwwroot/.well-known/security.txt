@@ -1,0 +1,4 @@
+Contact: mailto:bursons@gmail.com
+Expires: 2026-11-17T00:00:00.000Z
+Preferred-Languages: en
+Canonical: https://api-landscape.diyhelper.org/.well-known/security.txt

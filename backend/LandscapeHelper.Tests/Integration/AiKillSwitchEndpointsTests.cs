@@ -49,6 +49,7 @@ public class KillSwitchApiFactory : ApiFactory
 /// a structured 503 before OpenAI is invoked. Without these tests the
 /// flag is dead-on-arrival the next time it gets needed.
 /// </summary>
+[Collection(nameof(EnvironmentMutatingCollection))]
 public class AiKillSwitchEndpointsTests
 {
     [Theory]
@@ -84,8 +85,12 @@ public class AiKillSwitchEndpointsTests
 
         var resp = await client.PostAsJsonAsync("/api/analyze", new { });
         // Without the key configured we get 500 ("OPENAI_API_KEY is not
-        // configured.") — not 503. The point: the gate is invisible when the
-        // flag is off.
-        Assert.NotEqual(HttpStatusCode.ServiceUnavailable, resp.StatusCode);
+        // configured.") and the body must explicitly call out the missing
+        // key — proves the kill-switch gate is invisible when the flag is
+        // off AND that we landed in the real handler, not some other 5xx.
+        Assert.Equal(HttpStatusCode.InternalServerError, resp.StatusCode);
+        var body = await resp.Content.ReadAsStringAsync();
+        Assert.Contains("OPENAI_API_KEY", body);
+        Assert.DoesNotContain("ai_kill_switch", body);
     }
 }

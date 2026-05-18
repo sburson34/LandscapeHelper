@@ -50,10 +50,21 @@ jobs:
         run: npm run lint -- --max-warnings=200
         continue-on-error: true
 
-      - name: Test
-        run: npm test -- --ci --reporters=default --reporters=github-actions
+      - name: Test (with coverage gate)
+        # Coverage thresholds in jest.config.js are the gate — running with
+        # --coverage makes jest fail the job if any threshold is missed.
+        run: npm run test:coverage -- --ci --reporters=default --reporters=github-actions
         env:
           CI: 'true'
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-coverage
+          path: app/coverage/
+          if-no-files-found: warn
+          retention-days: 14
 
   backend:
     name: Backend (build + test)

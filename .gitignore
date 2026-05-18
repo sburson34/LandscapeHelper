@@ -10,6 +10,9 @@ build/
 *.txt
 *.log
 
+# Negations — text files that MUST ship even though *.txt is ignored above.
+!backend/**/wwwroot/**/security.txt
+
 # IDEs and editors
 .idea/
 .vscode/

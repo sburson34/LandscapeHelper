@@ -22,4 +22,19 @@ module.exports = {
   ],
   coverageDirectory: 'coverage',
   coverageReporters: ['text-summary', 'lcov'],
+
+  // Coverage gates. These reflect the baseline after the 2026-05-18 hardening
+  // PR and represent the floor — NEVER lower these to make CI green. The
+  // portfolio plan target is line >=85, branch >=78. We start at the current
+  // baseline minus a small slack so a single test deletion fails CI; new
+  // screens / utilities should bring the numbers UP toward the portfolio
+  // targets.
+  coverageThreshold: {
+    global: {
+      lines: 40,
+      statements: 40,
+      functions: 45,
+      branches: 28,
+    },
+  },
 };

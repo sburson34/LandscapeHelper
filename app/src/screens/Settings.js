@@ -284,6 +284,7 @@ export default function Settings({ navigation }) {
                 />
                 {authError ? <Text style={styles.translationError}>{authError}</Text> : null}
                 <TouchableOpacity
+                  testID="settings-auth-submit"
                   style={[styles.signInButton, authBusy && styles.disabledButton]}
                   onPress={handleAuth}
                   disabled={authBusy}
