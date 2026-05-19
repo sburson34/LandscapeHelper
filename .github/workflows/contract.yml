@@ -9,10 +9,10 @@ name: Live contract tests
 # require a live OpenAI quota.
 
 on:
-  schedule:
-    # 06:00 UTC Mondays — gives the on-call rotation a clean read of weekly
-    # provider-side drift on Monday morning.
-    - cron: '0 6 * * 1'
+  # schedule cron disabled pre-launch — re-enable at launch
+  # (saves real OpenAI vision-API quota)
+  # schedule:
+  #   - cron: '0 6 * * 1'   # 06:00 UTC Mondays
   workflow_dispatch:
 
 jobs:
