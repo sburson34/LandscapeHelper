@@ -6,6 +6,11 @@ name: E2E (Maestro)
 # / screen-mount paths.
 
 on:
+  # Dispatch-only. Maestro on macos-latest is 10x the Linux runner rate,
+  # and the Expo managed app has no app/android until `expo prebuild` runs —
+  # so the PR trigger was burning ~5 effective minutes per PR for a
+  # fail-fast no-op. Run manually before a release or when touching
+  # navigation / screen-mount paths.
   workflow_dispatch:
     inputs:
       run_golden_path:
