@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using LandscapeHelper.Tests.Infrastructure;
+using Sburson.Shared.Testing.Assertions;
 
 namespace LandscapeHelper.Tests.Integration;
 
@@ -9,6 +10,16 @@ namespace LandscapeHelper.Tests.Integration;
 /// same bugs never re-open. Anything in this file SHOULD fail loud if production
 /// drift opens the door again — read the comment block at the top of each test
 /// for what's actually being protected.
+///
+/// <para>
+/// The middleware-pipeline checks (correlation-id echo + generation, security
+/// headers) and the compliance-file checks (privacy-policy.html,
+/// terms-of-service.html, .well-known/security.txt) delegate to
+/// <see cref="MiddlewareAssertions.AssertSburonMiddlewareWiredAsync"/> and
+/// <see cref="ComplianceAssertions.AssertComplianceFilesServedAsync"/> in the
+/// shared package, so any future tweak (e.g. a new audited header or RFC
+/// surface) lands in one place instead of every per-app copy.
+/// </para>
 /// </summary>
 public class SecurityRegressionTests : IClassFixture<ApiFactory>
 {
@@ -16,83 +27,17 @@ public class SecurityRegressionTests : IClassFixture<ApiFactory>
 
     public SecurityRegressionTests(ApiFactory factory) => _factory = factory;
 
-    // ── Compliance files ────────────────────────────────────────────────
+    // ── Compliance files (shared assertion) ─────────────────────────────
 
     [Fact]
-    public async Task PrivacyPolicyHtml_Served_NonEmpty()
-    {
-        // App Store + Play Console require a hosted privacy policy linked from
-        // the listing. The wwwroot file MUST stay served by UseStaticFiles.
-        var client = _factory.CreateClient();
-        var resp = await client.GetAsync("/privacy-policy.html");
-        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
-        var body = await resp.Content.ReadAsStringAsync();
-        Assert.True(body.Length > 200, "privacy-policy.html should not be an empty placeholder");
-        Assert.Contains("privacy", body, StringComparison.OrdinalIgnoreCase);
-    }
+    public Task ComplianceFiles_AllServed_NonEmpty()
+        => ComplianceAssertions.AssertComplianceFilesServedAsync(_factory);
+
+    // ── Sburson.Shared.Backend middleware is actually wired (shared) ────
 
     [Fact]
-    public async Task TermsOfServiceHtml_Served_NonEmpty()
-    {
-        var client = _factory.CreateClient();
-        var resp = await client.GetAsync("/terms-of-service.html");
-        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
-        var body = await resp.Content.ReadAsStringAsync();
-        Assert.True(body.Length > 200, "terms-of-service.html should not be an empty placeholder");
-        Assert.Contains("terms", body, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Fact]
-    public async Task SecurityTxt_Served_AtWellKnown()
-    {
-        // RFC 9116 — required for the bug-bounty / responsible-disclosure flow
-        // documented in docs/SECURITY_PLAYBOOK.md.
-        var client = _factory.CreateClient();
-        var resp = await client.GetAsync("/.well-known/security.txt");
-        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
-        var body = await resp.Content.ReadAsStringAsync();
-        Assert.Contains("Contact:", body);
-    }
-
-    // ── Defense-in-depth headers ───────────────────────────────────────
-
-    [Fact]
-    public async Task SecurityHeaders_PresentOnApiResponse()
-    {
-        // Verified separately on /healthz in HelpRequestsValidationTests. This
-        // test pins them on a typical API path where any future middleware
-        // mis-ordering would skip the header pass.
-        var client = _factory.CreateClient();
-        var resp = await client.GetAsync("/api/features");
-        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
-        Assert.True(resp.Headers.Contains("X-Content-Type-Options"));
-        Assert.True(resp.Headers.Contains("Referrer-Policy"));
-        Assert.True(resp.Headers.Contains("X-Frame-Options"));
-        Assert.True(resp.Headers.Contains("Permissions-Policy"));
-    }
-
-    // ── Sburson.Shared.Backend middleware is actually wired ────────────
-
-    [Fact]
-    public async Task CorrelationIdMiddleware_EchoesClientHeader()
-    {
-        // CorrelationIdMiddleware (from Sburson.Shared.Backend) MUST be in the
-        // pipeline before the request logger / exception handler so every
-        // log line and error response can be threaded back to the originating
-        // request. The contract: when a client supplies X-Correlation-Id, the
-        // server echoes it back on the response.
-        var client = _factory.CreateClient();
-        const string clientId = "sec-regression-corr-abc123";
-        var req = new HttpRequestMessage(HttpMethod.Get, "/api/features");
-        req.Headers.Add("X-Correlation-Id", clientId);
-        var resp = await client.SendAsync(req);
-
-        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
-        Assert.True(resp.Headers.Contains("X-Correlation-Id"),
-            "Response must echo X-Correlation-Id when CorrelationIdMiddleware is wired.");
-        var echoed = resp.Headers.GetValues("X-Correlation-Id").First();
-        Assert.Equal(clientId, echoed);
-    }
+    public Task SburonMiddleware_Pipeline_Wires_CorrelationId_And_SecurityHeaders()
+        => MiddlewareAssertions.AssertSburonMiddlewareWiredAsync(_factory);
 
     // ── No stack-trace leakage in error responses ──────────────────────
 

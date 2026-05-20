@@ -145,7 +145,16 @@ jest.mock('@react-navigation/native', () => ({
 // mock returns null. That's fine — we drive the "take photo" + "gallery"
 // buttons directly without rendering the camera.
 
-const { renderScreen, fireEvent, waitFor } = require('./helpers/renderWithNav');
+// Shared `renderWithNav` (from @sburson34/mobile-shared/testing) is the
+// canonical render helper since 0.3.x. Its signature is
+// `renderWithNav(Component, { params, navigation, props })` — to keep the
+// existing call shape (`renderScreen(Comp, { params, ...extraProps })`)
+// we tunnel the extra props through `props`. This adapter lets us delete
+// the per-app `helpers/renderWithNav.js` without rewriting every callsite.
+const { renderWithNav } = require('@sburson34/mobile-shared/testing');
+const { fireEvent, waitFor } = require('@testing-library/react-native');
+const renderScreen = (Component, { params, navigation, ...extraProps } = {}) =>
+  renderWithNav(Component, { params, navigation, props: extraProps });
 const backendClient = require('../api/backendClient');
 const storage = require('../utils/storage');
 

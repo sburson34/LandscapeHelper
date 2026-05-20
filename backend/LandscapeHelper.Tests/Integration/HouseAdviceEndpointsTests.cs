@@ -11,7 +11,7 @@ namespace LandscapeHelper.Tests.Integration;
 /// safest possible behaviour and exactly what the prod ApiFactory should test
 /// against once a stub AI client is wired in.
 /// </summary>
-[Collection(nameof(EnvironmentMutatingCollection))]
+[Collection("SerialEnv")]
 public class HouseAdviceEndpointsTests : IClassFixture<ApiFactory>
 {
     private readonly ApiFactory _factory;

@@ -13,7 +13,7 @@ namespace LandscapeHelper.Tests.Integration;
 ///
 /// Companion live test: <c>LandscapeHelper.Tests.Live/AnalyzeLiveTests.cs</c>.
 /// </summary>
-[Collection(nameof(EnvironmentMutatingCollection))]
+[Collection("SerialEnv")]
 public class AnalyzeEndpointFakeAiTests
 {
     private const string SamplePngBase64 =

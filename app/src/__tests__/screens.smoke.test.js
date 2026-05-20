@@ -99,7 +99,15 @@ jest.mock('@react-navigation/native', () => ({
   },
 }));
 
-const { renderScreen } = require('./helpers/renderWithNav');
+// Shared `renderWithNav` (from @sburson34/mobile-shared/testing) is the
+// canonical render helper since 0.3.x. Its signature is
+// `renderWithNav(Component, { params, navigation, props })` — to keep the
+// existing call shape (`renderScreen(Comp, { params, ...extraProps })`)
+// we tunnel the extra props through `props`. This adapter lets us delete
+// the per-app `helpers/renderWithNav.js` without rewriting every callsite.
+const { renderWithNav } = require('@sburson34/mobile-shared/testing');
+const renderScreen = (Component, { params, navigation, ...extraProps } = {}) =>
+  renderWithNav(Component, { params, navigation, props: extraProps });
 
 const sampleProject = {
   title: 'Test landscape project',
