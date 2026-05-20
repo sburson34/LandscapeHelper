@@ -72,6 +72,13 @@ public class ApiFactory : BaseApiFactory<Program>
             // to BaseApiFactory's per-fixture backend. UseSqliteFallback tells
             // us which provider is active (sqlite-in-memory dev fallback vs
             // Testcontainers Postgres).
+            //
+            // RemoveAllDatabaseProviders (Sburson.Shared.Testing 0.1.2)
+            // strips every EF Core + Npgsql service the production
+            // AddDbContext registered. Without it EF Core sees two
+            // providers on the SQLite-fallback path and throws on first
+            // request. Same fix that landed in ArgumentRef and the others.
+            services.RemoveAllDatabaseProviders();
             services.RemoveAll<DbContextOptions<AppDbContext>>();
             services.RemoveAll<AppDbContext>();
 
