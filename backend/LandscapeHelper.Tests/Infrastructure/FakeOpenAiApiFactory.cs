@@ -13,6 +13,12 @@ namespace LandscapeHelper.Tests.Infrastructure;
 /// and caches it in a closed-over local, so swapping a DI registration would
 /// not reach the analyze / ask-helper / verify-step handlers. Setting the env
 /// vars in <c>ConfigureWebHost</c> happens before <c>Program.Main</c> runs.
+///
+/// Why a real HTTP listener (and not <see cref="Sburson.Shared.Testing.FakeHttpMessageHandler"/>):
+/// the OpenAI .NET SDK we use doesn't expose its underlying HttpClient for
+/// substitution, so the only seam that exercises the real wire-shape is to
+/// redirect via <c>OPENAI_BASE_URL</c>. The shared FakeHttpMessageHandler
+/// remains the right tool for typed HttpClient registrations elsewhere.
 /// </summary>
 public sealed class FakeOpenAiApiFactory : ApiFactory
 {

@@ -13,7 +13,7 @@ namespace LandscapeHelper.Tests.Integration;
 /// stay wired up when a DSN is set. Smoke-level — we are NOT testing Sentry's
 /// internals.
 /// </summary>
-[Collection(nameof(Infrastructure.EnvironmentMutatingCollection))]
+[Collection("SerialEnv")]
 public class SentryInitTests
 {
     [Fact]

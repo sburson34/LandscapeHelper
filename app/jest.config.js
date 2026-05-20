@@ -3,7 +3,12 @@ module.exports = {
   transformIgnorePatterns: [
     'node_modules/(?!(react-native|@react-native|@react-navigation|@sburson34|expo|@expo|@sentry/react-native|expo-constants|expo-notifications|expo-camera|expo-image-picker|expo-speech-recognition|expo-audio|expo-splash-screen|expo-print|expo-sharing|expo-location|react-native-gesture-handler|react-native-reanimated|react-native-screens|react-native-safe-area-context|react-native-tts|react-native-image-picker|react-native-vision-camera)/)',
   ],
-  setupFiles: ['./jest.setup.js'],
+  // `setupFilesAfterEnv` (not plain `setupFiles`) — the shared
+  // setupSharedJestMocks() transitively imports
+  // @testing-library/react-native, which calls expect.extend() at load
+  // time. Running before the test framework is installed throws
+  // `ReferenceError: expect is not defined`.
+  setupFilesAfterEnv: ['./jest.setup.js'],
   testMatch: ['**/src/__tests__/**/*.test.js'],
   moduleNameMapper: {
     '\\.(png|jpg|jpeg|gif|svg)$': '<rootDir>/jest.setup.js',
