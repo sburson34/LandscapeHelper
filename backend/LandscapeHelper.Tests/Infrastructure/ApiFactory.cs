@@ -68,23 +68,10 @@ public class ApiFactory : BaseApiFactory<Program>
 
         builder.ConfigureServices(services =>
         {
-            // Strip every EF Core + Npgsql service the production Program.cs
-            // registered before re-adding our own provider. AddDbContext<T>
-            // wires more than just DbContextOptions<T>: Npgsql's entire
-            // IModelCustomizer/IRelationalTypeMappingSource/etc. chain comes
-            // along. If we only remove DbContextOptions<AppDbContext> +
-            // AppDbContext, EF Core sees BOTH providers (Sqlite from our
-            // override + Npgsql from production) and throws on Linux CI:
-            //   "Services for database providers 'Microsoft.EntityFrameworkCore.Sqlite',
-            //    'Npgsql.EntityFrameworkCore.PostgreSQL' have been registered..."
-            // Same gap PianoHelper documented; centralize this in a shared
-            // helper once 2+ apps need it.
-            var toRemove = services
-                .Where(d =>
-                    (d.ServiceType.FullName?.StartsWith("Microsoft.EntityFrameworkCore", StringComparison.Ordinal) ?? false)
-                    || (d.ServiceType.FullName?.StartsWith("Npgsql", StringComparison.Ordinal) ?? false))
-                .ToList();
-            foreach (var d in toRemove) services.Remove(d);
+            // Replace the production DbContext registration with one bound
+            // to BaseApiFactory's per-fixture backend. UseSqliteFallback tells
+            // us which provider is active (sqlite-in-memory dev fallback vs
+            // Testcontainers Postgres).
             services.RemoveAll<DbContextOptions<AppDbContext>>();
             services.RemoveAll<AppDbContext>();
 
