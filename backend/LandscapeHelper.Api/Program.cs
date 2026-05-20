@@ -285,8 +285,14 @@ using (var scope = app.Services.CreateScope())
 
     // Idempotent additive schema for existing databases. Provider-specific
     // because we use SQLite locally and Postgres on the shared host, and the
-    // two dialects disagree on AUTOINCREMENT vs SERIAL.
-    if (dbProvider == "postgresql")
+    // two dialects disagree on AUTOINCREMENT vs SERIAL. Dispatch on the
+    // ACTUAL DbContext provider rather than the `Database:Provider` config
+    // string — integration tests swap the DbContext registration to use
+    // BaseApiFactory's per-fixture backend (sometimes SQLite-in-memory,
+    // sometimes Postgres-via-Testcontainers), and the config override is
+    // layered later than `dbProvider` was read on line 52, so they can
+    // diverge from each other.
+    if (db.Database.IsNpgsql())
     {
         db.Database.ExecuteSqlRaw(@"
             CREATE TABLE IF NOT EXISTS ""Users"" (
