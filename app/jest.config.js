@@ -1,5 +1,9 @@
 module.exports = {
   preset: 'react-native',
+  // Defensive against leaked react-native Animated.timing setTimeout
+  // callbacks that don't drain in the jest mock environment — PianoHelper
+  // #20 hit a 20-min CI stall this way. No-op when nothing leaks.
+  forceExit: true,
   transformIgnorePatterns: [
     'node_modules/(?!(react-native|@react-native|@react-navigation|@sburson34|expo|@expo|@sentry/react-native|expo-constants|expo-notifications|expo-camera|expo-image-picker|expo-speech-recognition|expo-audio|expo-splash-screen|expo-print|expo-sharing|expo-location|react-native-gesture-handler|react-native-reanimated|react-native-screens|react-native-safe-area-context|react-native-tts|react-native-image-picker|react-native-vision-camera)/)',
   ],
