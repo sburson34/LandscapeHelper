@@ -8,6 +8,11 @@ import { initSentry, navigationIntegration } from './src/services/sentry';
 // any throw during provider setup are captured. initSentry is a no-op when no
 // DSN is configured, so this is safe to leave in for dev builds too.
 initSentry();
+
+// Anonymous product telemetry — init early, then record the cold-launch event.
+import { initTelemetry, track } from './src/services/telemetry';
+initTelemetry().then(() => track('app_opened')).catch(() => {});
+
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createDrawerNavigator } from '@react-navigation/drawer';
 import { Ionicons as Icon } from '@expo/vector-icons';
@@ -223,6 +228,14 @@ function AppContent() {
       theme={MyTheme}
       onReady={() => {
         try { navigationIntegration?.registerNavigationContainer?.(navigationRef); } catch {}
+      }}
+      onStateChange={(state) => {
+        try {
+          const route = state?.routes?.[state.index];
+          if (route?.name) {
+            track('screen_viewed', { screen: route.name });
+          }
+        } catch { /* ignore */ }
       }}
       ref={(ref) => { navigationRef = ref; }}
     >
