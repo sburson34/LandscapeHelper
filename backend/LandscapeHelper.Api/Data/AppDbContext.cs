@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using LandscapeHelper.Api.Models;
+using Sburson.Shared.Telemetry;
 
 namespace LandscapeHelper.Api.Data;
 
@@ -13,8 +14,13 @@ public class AppDbContext : DbContext
     public DbSet<HouseAdvicePhoto> HouseAdvicePhotos => Set<HouseAdvicePhoto>();
     public DbSet<DataDeletionRequest> DataDeletionRequests => Set<DataDeletionRequest>();
 
+    // Anonymous product-usage events (shared schema). See Sburson.Shared.Telemetry.
+    public DbSet<AnalyticsEvent> AnalyticsEvents => Set<AnalyticsEvent>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.ApplyAnalyticsEvent();
+
         modelBuilder.Entity<User>().HasIndex(u => u.Email).IsUnique();
 
         modelBuilder.Entity<HouseAdviceSession>()
