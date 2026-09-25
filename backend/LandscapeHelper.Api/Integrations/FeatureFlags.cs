@@ -19,10 +19,19 @@ public class FeatureFlags : FeatureFlagsBase
     public bool Community { get; }
     public bool QuoteRequests { get; }
 
-    // Emergency kill-switch. When true, all AI-backed endpoints return 503.
+    // Emergency kill-switch. When true, every `.RequireAi()` endpoint returns
+    // the shared 503 {error:"ai_disabled", code:"ai_kill_switch", message}.
     // Flip via the AI_KILL_SWITCH env var on the shared host for an
     // immediate rollback without a redeploy.
     public bool AiKillSwitch { get; }
+
+    /// <summary>
+    /// The shared AI gates (<c>.RequireAi()</c>) read the kill switch through
+    /// <see cref="Sburson.Shared.Gates.IAiKillSwitch"/>; answer with the value
+    /// cached at construction so the documented AI_KILL_SWITCH contract and
+    /// <c>/api/features</c>'s <c>aiKillSwitch</c> can never disagree.
+    /// </summary>
+    protected override bool IsAiKillSwitchEngaged => AiKillSwitch;
 
     public FeatureFlags(IConfiguration config) : base(config)
     {

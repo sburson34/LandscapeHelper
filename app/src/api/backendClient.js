@@ -3,6 +3,29 @@ import { getCachedAnalysis, setCachedAnalysis, getAppPrefs, getToolInventory, ge
 
 const BASE_URL = API_BASE_URL;
 
+// App endpoints answer {error: "<sentence>"}. The shared backend AI kill
+// switch (Sburson.Shared.Gates) answers {error: "ai_disabled",
+// code: "ai_kill_switch", message: "<sentence>"}. Show the sentence either
+// way: a snake_case `error` next to a `message` is a machine token, never
+// copy for the user.
+const MACHINE_TOKEN = /^[a-z0-9]+(_[a-z0-9]+)+$/;
+export const pickErrorMessage = (body) => {
+  if (!body || typeof body !== 'object') return undefined;
+  const error = typeof body.error === 'string' ? body.error : undefined;
+  const message = typeof body.message === 'string' ? body.message : undefined;
+  if (error && message && MACHINE_TOKEN.test(error)) return message;
+  return error || message;
+};
+
+// Error for a non-2xx response: the readable sentence, plus `status` and the
+// backend's machine `code` (e.g. "ai_kill_switch") when it sent one.
+const responseError = (body, fallback, status) => {
+  const err = new Error(pickErrorMessage(body) || fallback);
+  err.status = status;
+  if (typeof body?.code === 'string') err.code = body.code;
+  return err;
+};
+
 const jsonFetch = async (url, body, opts = {}) => {
   const response = await fetch(url, {
     method: 'POST',
@@ -13,7 +36,7 @@ const jsonFetch = async (url, body, opts = {}) => {
   if (!response.ok) {
     let errorData = {};
     try { errorData = await response.json(); } catch {}
-    throw new Error(errorData.error || `Request failed: ${response.status}`);
+    throw responseError(errorData, `Request failed: ${response.status}`, response.status);
   }
   return response.json();
 };
@@ -160,7 +183,7 @@ const getWholeHouseAdvice = async ({ photos, budget, ideas, language = 'en' }) =
   if (!response.ok) {
     let err = {};
     try { err = await response.json(); } catch {}
-    throw new Error(err.error || `Request failed: ${response.status}`);
+    throw responseError(err, `Request failed: ${response.status}`, response.status);
   }
   return response.json();
 };
@@ -177,7 +200,7 @@ const getShrubberyAdvice = async ({ photos, zip, notes, language = 'en' }) => {
   if (!response.ok) {
     let err = {};
     try { err = await response.json(); } catch {}
-    throw new Error(err.error || `Request failed: ${response.status}`);
+    throw responseError(err, `Request failed: ${response.status}`, response.status);
   }
   return response.json();
 };
@@ -216,7 +239,7 @@ const requestAccountDeletion = async ({ name, email, phone, token }) => {
   if (!response.ok) {
     let errorData = {};
     try { errorData = await response.json(); } catch {}
-    throw new Error(errorData.error || `Deletion request failed: ${response.status}`);
+    throw responseError(errorData, `Deletion request failed: ${response.status}`, response.status);
   }
   return response.json();
 };
@@ -246,7 +269,7 @@ const translateStrings = async (texts, target, source = 'en') => {
   if (!response.ok) {
     let err = {};
     try { err = await response.json(); } catch {}
-    throw new Error(err.error || `Translate failed: ${response.status}`);
+    throw responseError(err, `Translate failed: ${response.status}`, response.status);
   }
   const data = await response.json();
   return data.translations || [];

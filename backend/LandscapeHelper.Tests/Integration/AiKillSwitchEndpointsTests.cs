@@ -1,10 +1,12 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using LandscapeHelper.Api.Integrations;
 using LandscapeHelper.Tests.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Sburson.Shared.Gates;
 
 namespace LandscapeHelper.Tests.Integration;
 
@@ -70,9 +72,12 @@ public class AiKillSwitchEndpointsTests
         var resp = await client.PostAsJsonAsync(path, new { });
         Assert.Equal(HttpStatusCode.ServiceUnavailable, resp.StatusCode);
 
-        var body = await resp.Content.ReadAsStringAsync();
-        Assert.Contains("ai_kill_switch", body);
-        Assert.Contains("ai_disabled", body);
+        // The shared Sburson.Shared.Gates body:
+        // { "error": "ai_disabled", "code": "ai_kill_switch", "message": "<sentence>" }
+        var json = await resp.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(AiKillSwitchResponse.Error, json.GetProperty("error").GetString());
+        Assert.Equal(AiKillSwitchResponse.Code, json.GetProperty("code").GetString());
+        Assert.Equal(AiKillSwitchResponse.Message, json.GetProperty("message").GetString());
     }
 
     [Fact]
